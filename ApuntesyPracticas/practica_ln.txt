@@ -1,0 +1,13 @@
+Ejercicio 1.
+
+a) \0        -> \x.x
+b) \0\1 0    -> \x.x \y.x y
+c) \\\2 0 1  -> \x y z.x z y
+d) \(\0)(\1) -> \x.(\z.z)(\z.x)
+
+Ejercicio 2.
+
+a) \x.x (\y.y)      -> \0 (\0)
+b) \f.\x.f x        -> \\1 0
+c) \x.x x    c       -> \0 0
+d) \x.\y.(\z.x z) y -> \\(\2 0)0
