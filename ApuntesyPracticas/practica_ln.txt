@@ -11,3 +11,14 @@ a) \x.x (\y.y)      -> \0 (\0)
 b) \f.\x.f x        -> \\1 0
 c) \x.x x    c       -> \0 0
 d) \x.\y.(\z.x z) y -> \\(\2 0)0
+
+Ejercicio 3.
+a) open x 0 -> x
+b) open x (\\2 0 1) -> \\x 0 1
+c) open x (\0)  -> (\0)
+d) open x (0\0 1\1 2) -> (x\0 x\1 x)
+e) close x 0 -> 0
+f) close x (x (\0 x)) -> (0 (\0 1))
+g) close x (\\0 1) -> (\\0 1)
+h) close x \(close y (\y x)) -(y close)> close x \(\1 x)
+                             -(x close)> (\\1 2)
