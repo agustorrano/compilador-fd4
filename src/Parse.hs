@@ -128,16 +128,8 @@ binding = do v <- var
              return (v, ty)
 
 -- parsea una lista de pares (variable : tipo), encerrados por paréntesis
--- bindings :: P [(Name, Ty)]
--- bindings = many $ parens binding
 bindings :: P [(Name, Ty)]
-bindings = (do
-  p@(v,ty) <- parens binding
-  xs <- bindings
-  return (p:xs))
-  <|>
-  (do
-    return [])
+bindings = many $ parens binding
 
 bindingstype :: P ([(Name, Ty)], Ty -> Ty)
 bindingstype =
@@ -153,11 +145,11 @@ bindingstype =
 lam :: P STerm
 lam = do i <- getPos
          reserved "fun"
-         (v,ty) <- parens binding
-        --  xs <- bindings
+        --  (v,ty) <- parens binding
+         xs <- bindings
          reservedOp "->"
          t <- expr
-         return (SLam i [(v,ty)] t)
+         return (SLam i xs t)
 
 -- Nota el parser app también parsea un solo atom.
 app :: P STerm
