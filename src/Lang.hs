@@ -27,13 +27,13 @@ import           Data.List.Extra                ( nubSort )
 data STm info ty var =
     SV info var
   | SConst info Const
-  | SLam info (var, ty) (STm info ty var)
+  | SLam info [(var, ty)] (STm info ty var)  -- Ahora tenemos lista de variables 
   | SApp info (STm info ty var) (STm info ty var)
   | SPrint info String (STm info ty var)
   | SBinaryOp info BinaryOp (STm info ty var) (STm info ty var)
-  | SFix info (var, ty) (var, ty) (STm info ty var)
+  | SFix info (var, ty) [(var, ty)] (STm info ty var)
   | SIfZ info (STm info ty var) (STm info ty var) (STm info ty var)
-  | SLet info (var, ty) (STm info ty var) (STm info ty var)
+  | SLet info Bool (var, ty) [(var, ty)] (STm info ty var) (STm info ty var) -- Bool -> Rec or Not Rec; [] -> Let variable; (a:as) -> Let fun
   deriving (Show, Functor)
 
 -- | AST de Tipos
@@ -52,6 +52,9 @@ newtype Const = CNat Int
 data BinaryOp = Add | Sub
   deriving Show
 
+-- | tipo de datos de declaraciones superficiales
+data SDecl info var ty a = SDLet info Bool (var, ty) [(var, ty)] a
+
 -- | tipo de datos de declaraciones, parametrizado por el tipo del cuerpo de la declaración
 data Decl a = Decl
   { declPos  :: Pos
@@ -59,6 +62,8 @@ data Decl a = Decl
   , declBody :: a
   }
   deriving (Show, Functor)
+
+
 
 -- | AST de los términos. 
 --   - info es información extra que puede llevar cada nodo. 

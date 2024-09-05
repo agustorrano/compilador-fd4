@@ -43,7 +43,7 @@ langDef = emptyDef {
 whiteSpace :: P ()
 whiteSpace = Tok.whiteSpace lexer
 
-natural :: P Integer 
+natural :: P Integer
 natural = Tok.natural lexer
 
 stringLiteral :: P String
@@ -86,13 +86,13 @@ tyatom = (reserved "Nat" >> return NatTy)
          <|> parens typeP
 
 typeP :: P Ty
-typeP = try (do 
+typeP = try (do
           x <- tyatom
           reservedOp "->"
           y <- typeP
           return (FunTy x y))
       <|> tyatom
-          
+
 const :: P Const
 const = CNat <$> num
 
@@ -127,13 +127,37 @@ binding = do v <- var
              ty <- typeP
              return (v, ty)
 
+-- parsea una lista de pares (variable : tipo), encerrados por paréntesis
+-- bindings :: P [(Name, Ty)]
+-- bindings = many $ parens binding
+bindings :: P [(Name, Ty)]
+bindings = (do
+  p@(v,ty) <- parens binding
+  xs <- bindings
+  return (p:xs))
+  <|>
+  (do
+    return [])
+
+bindingstype :: P ([(Name, Ty)], Ty -> Ty)
+bindingstype =
+  (do
+   l@(v,ty') <- parens binding
+   (xs, f) <- bindingstype
+   return (l:xs, FunTy ty' . f))
+  <|>
+  (do
+    return ([], id))
+
+
 lam :: P STerm
 lam = do i <- getPos
          reserved "fun"
          (v,ty) <- parens binding
+        --  xs <- bindings
          reservedOp "->"
          t <- expr
-         return (SLam i (v,ty) t)
+         return (SLam i [(v,ty)] t)
 
 -- Nota el parser app también parsea un solo atom.
 app :: P STerm
@@ -156,21 +180,55 @@ fix :: P STerm
 fix = do i <- getPos
          reserved "fix"
          (f, fty) <- parens binding
-         (x, xty) <- parens binding
+         xs <- bindings
          reservedOp "->"
          t <- expr
-         return (SFix i (f,fty) (x,xty) t)
+         return (SFix i (f,fty) xs t)
+
+let0 :: P ((Name, Ty), [(Name, Ty)])
+let0 = do
+  p@(v,ty) <- parens binding
+  return (p, [])
+
+let1 :: P ((Name,Ty), [(Name,Ty)])
+let1 = try (do
+  t@(v,ty) <- binding
+  return (t, []))
+
+let2 :: P ((Name,Ty), [(Name,Ty)])
+let2 = do
+  v <- var
+  (xs, f) <- bindingstype
+  reservedOp ":"
+  ty <- typeP
+  return ((v, f ty), xs)
+
+letin :: P (STerm, STerm)
+letin = do
+  reservedOp "="
+  t <- expr
+  reserved "in"
+  t' <- expr
+  return (t, t')
+
+letbool :: P Bool
+letbool =
+  (do
+    reserved "rec"
+    return True)
+  <|>
+  (do
+    return False)
+
 
 letexp :: P STerm
 letexp = do
-  i <- getPos
   reserved "let"
-  (v,ty) <- parens binding
-  reservedOp "="  
-  def <- expr
-  reserved "in"
-  body <- expr
-  return (SLet i (v,ty) def body)
+  i <- getPos
+  b <- letbool
+  (p@(v,ty),xs) <- let0 <|> let1 <|> let2
+  (t, t') <- letin
+  return (SLet i b p xs t t')
 
 -- | Parser de términos
 tm :: P STerm
@@ -178,7 +236,7 @@ tm = app <|> lam <|> ifz <|> printOp <|> fix <|> letexp
 
 -- | Parser de declaraciones
 decl :: P (Decl STerm)
-decl = do 
+decl = do
      i <- getPos
      reserved "let"
      v <- var
