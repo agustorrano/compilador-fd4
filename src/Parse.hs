@@ -203,6 +203,12 @@ letin = do
   t' <- expr
   return (t, t')
 
+letnoin :: P STerm
+letnoin = do
+  reservedOp "="
+  expr
+  
+
 letbool :: P Bool
 letbool =
   (do
@@ -227,22 +233,30 @@ tm :: P STerm
 tm = app <|> lam <|> ifz <|> printOp <|> fix <|> letexp
 
 -- | Parser de declaraciones
-decl :: P (Decl STerm)
+-- decl :: P (Decl STerm)
+-- decl = do
+--      i <- getPos
+--      reserved "let"
+--      v <- var
+--      reservedOp "="
+--      t <- expr
+--      return (Decl i v t)
+decl:: P (SDecl STerm)
 decl = do
-     i <- getPos
-     reserved "let"
-     v <- var
-     reservedOp "="
-     t <- expr
-     return (Decl i v t)
+  reserved "let"
+  i <- getPos
+  b <- letbool
+  (p@(v,ty),xs) <- let0 <|> let1 <|> let2
+  t <- letnoin
+  return (SDecl i b p xs t)
 
 -- | Parser de programas (listas de declaraciones) 
-program :: P [Decl STerm]
+program :: P [SDecl STerm]
 program = many decl
 
 -- | Parsea una declaración a un término
 -- Útil para las sesiones interactivas
-declOrTm :: P (Either (Decl STerm) STerm)
+declOrTm :: P (Either (SDecl STerm) STerm)
 declOrTm =  try (Left <$> decl) <|> (Right <$> expr)
 
 -- Corre un parser, chequeando que se pueda consumir toda la entrada

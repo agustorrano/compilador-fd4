@@ -53,7 +53,15 @@ data BinaryOp = Add | Sub
   deriving Show
 
 -- | tipo de datos de declaraciones superficiales
-data SDecl info var ty a = SDLet info Bool (var, ty) [(var, ty)] a
+-- data SDecl info var ty a = SDLet info Bool (var, ty) [(var, ty)] a
+data SDecl a = SDecl
+  {
+    sdeclPos :: Pos,
+    sdeclBool :: Bool,
+    sdeclVarTy :: (Name, Ty),
+    sdeclList :: [(Name, Ty)],
+    sdeclBody :: a
+  }
 
 -- | tipo de datos de declaraciones, parametrizado por el tipo del cuerpo de la declaración
 data Decl a = Decl
