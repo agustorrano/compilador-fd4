@@ -108,4 +108,20 @@ elabDecl (SDecl p False (v,vty) xs dec) =
 elabDecl (SDecl p True l1@(v,vty) xs dec) =
   do
     t1 <- elab (SFix p l1 xs dec)
-    return $ Decl p v (close v t1)
+    return $ Decl p v t1
+
+-- elabDecl :: MonadFD4 m => SDecl STerm -> m (Decl Term)
+-- elabDecl (SDecl p False (v,vty) [] dec) = 
+--   do
+--     t <- elab dec
+--     return $ Decl p v t 
+-- elabDecl (SDecl p True (v,vty) [] t) = 
+--   failPosFD4 p "Let Recursivo sin argumentos"
+-- elabDecl (SDecl p False (v,vty) xs dec) =
+--   do 
+--     t <- elab (SLam p xs dec)
+--     return $ Decl p v t
+-- elabDecl (SDecl p True l@(v,vty) xs dec) =
+--   do
+--     t <- elab dec
+--     return $ Decl p v (SFix p l xs t)

@@ -29,7 +29,7 @@ import Global
 import Errors
 import Lang
 import Parse ( P, tm, program, declOrTm, runP )
-import Elab ( elab )
+import Elab ( elab, elabDecl )
 import Eval ( eval )
 import PPrint ( pp , ppTy, ppDecl )
 import MonadFD4
@@ -146,11 +146,10 @@ handleDecl d = do
 
       where
         typecheckDecl :: MonadFD4 m => SDecl STerm -> m (Decl TTerm)
-        typecheckDecl (SDecl p _ (x,ty) _ t) =
+        typecheckDecl ss =
           do
-            t' <- elab t
-            tcDecl (Decl p x t')
-
+            t' <- elabDecl ss
+            tcDecl t'
 
 data Command = Compile CompileForm
              | PPrint String
