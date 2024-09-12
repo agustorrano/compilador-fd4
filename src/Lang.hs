@@ -57,12 +57,12 @@ data BinaryOp = Add | Sub
 data SDecl a = SDecl
   {
     sdeclPos :: Pos,
-    sdeclBool :: Bool,
+    sdeclRec :: Bool,
     sdeclVarTy :: (Name, Ty),
     sdeclList :: [(Name, Ty)],
     sdeclBody :: a
   }
-
+  deriving (Show, Functor)
 -- | tipo de datos de declaraciones, parametrizado por el tipo del cuerpo de la declaración
 data Decl a = Decl
   { declPos  :: Pos

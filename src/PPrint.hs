@@ -1,5 +1,6 @@
 {-# OPTIONS_GHC -Wno-unrecognised-pragmas #-}
 {-# HLINT ignore "Use record patterns" #-}
+{-# OPTIONS_GHC -Wno-incomplete-patterns #-}
 {-|
 Module      : PPrint
 Description : Pretty printer para FD4.
@@ -54,19 +55,19 @@ openAll gp ns (V p v) = case v of
 openAll gp ns (Const p c) = SConst (gp p) c
 openAll gp ns (Lam p x ty t) = 
   let x' = freshen ns x 
-  in SLam (gp p) (x',ty) (openAll gp (x':ns) (open x' t))
+  in SLam (gp p) [(x',ty)] (openAll gp (x':ns) (open x' t))
 openAll gp ns (App p t u) = SApp (gp p) (openAll gp ns t) (openAll gp ns u)
 openAll gp ns (Fix p f fty x xty t) = 
   let 
     x' = freshen ns x
     f' = freshen (x':ns) f
-  in SFix (gp p) (f',fty) (x',xty) (openAll gp (x:f:ns) (open2 f' x' t))
+  in SFix (gp p) (f',fty) [(x',xty)] (openAll gp (x:f:ns) (open2 f' x' t))
 openAll gp ns (IfZ p c t e) = SIfZ (gp p) (openAll gp ns c) (openAll gp ns t) (openAll gp ns e)
 openAll gp ns (Print p str t) = SPrint (gp p) str (openAll gp ns t)
 openAll gp ns (BinaryOp p op t u) = SBinaryOp (gp p) op (openAll gp ns t) (openAll gp ns u)
 openAll gp ns (Let p v ty m n) = 
     let v'= freshen ns v 
-    in  SLet (gp p) (v',ty) (openAll gp ns m) (openAll gp (v':ns) (open v' n))
+    in  SLet (gp p) False (v',ty) [] (openAll gp ns m) (openAll gp (v':ns) (open v' n))
 
 --Colores
 constColor :: Doc AnsiStyle -> Doc AnsiStyle
@@ -122,31 +123,44 @@ parenIf _ = id
 -- at: debe ser un átomo
 -- | Pretty printing de términos (Doc)
 t2doc :: Bool     -- Debe ser un átomo? 
-      -> STerm    -- término a mostrar
+      -> STerm
       -> Doc AnsiStyle
 -- Uncomment to use the Show instance for STerm
 {- t2doc at x = text (show x) -}
 t2doc at (SV _ x) = name2doc x
 t2doc at (SConst _ c) = c2doc c
-t2doc at (SLam _ (v,ty) t) =
+t2doc at (SLam _ [vty] t) =
   parenIf at $
   sep [sep [ keywordColor (pretty "fun")
-           , binding2doc (v,ty)
+           , binding2doc vty
            , opColor(pretty "->")]
       , nest 2 (t2doc False t)]
-
+t2doc at (SLam i (vty:xs) t) =
+  parenIf at $
+  sep [sep [ keywordColor (pretty "fun")
+           , binding2doc vty
+           , opColor(pretty "->")]
+      , nest 2 (t2doc False (SLam i xs t))]
 t2doc at t@(SApp _ _ _) =
   let (h, ts) = collectApp t in
   parenIf at $
   t2doc True h <+> sep (map (t2doc True) ts)
 
-t2doc at (SFix _ (f,fty) (x,xty) m) =
+t2doc at (SFix _ (f,fty) [vty] m) =
   parenIf at $
   sep [ sep [keywordColor (pretty "fix")
                   , binding2doc (f, fty)
-                  , binding2doc (x, xty)
+                  , binding2doc vty
                   , opColor (pretty "->") ]
       , nest 2 (t2doc False m)
+      ]
+t2doc at (SFix i (f,fty) (vty:xs) m) =
+  parenIf at $
+  sep [ sep [keywordColor (pretty "fix")
+                  , binding2doc (f, fty)
+                  , binding2doc vty
+                  , opColor (pretty "->") ]
+      , nest 2 (t2doc False (SLam i xs m))
       ]
 t2doc at (SIfZ _ c t e) =
   parenIf at $
@@ -158,13 +172,33 @@ t2doc at (SPrint _ str t) =
   parenIf at $
   sep [keywordColor (pretty "print"), pretty (show str), t2doc True t]
 
-t2doc at (SLet _ (v,ty) t t') =
+t2doc at (SLet _ False (v,ty) [] t t') =
   parenIf at $
   sep [
     sep [keywordColor (pretty "let")
        , binding2doc (v,ty)
        , opColor (pretty "=") ]
   , nest 2 (t2doc False t)
+  , keywordColor (pretty "in")
+  , nest 2 (t2doc False t') ]
+  -- Let Fun
+t2doc at (SLet i False (v,ty) xs t t') =
+  parenIf at $
+  sep [
+    sep [keywordColor (pretty "let")
+       , binding2doc (v,ty)
+       , opColor (pretty "=") ]
+  , nest 2 (t2doc False (SLam i xs t))
+  , keywordColor (pretty "in")
+  , nest 2 (t2doc False t') ]
+  --Let Rec
+t2doc at (SLet i True (v,ty) xs t t') =
+  parenIf at $
+  sep [
+    sep [keywordColor (pretty "let")
+       , binding2doc (v,ty)
+       , opColor (pretty "=") ]
+  , nest 2 (t2doc False (SFix i (v,ty) xs t))
   , keywordColor (pretty "in")
   , nest 2 (t2doc False t') ]
 

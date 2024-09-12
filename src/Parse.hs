@@ -104,6 +104,13 @@ printOp = do
   a <- atom
   return (SPrint i str a)
 
+printEthaOp :: P STerm
+printEthaOp = do
+  i <- getPos
+  reserved "print"
+  str <- option "" stringLiteral
+  return (SLam i [("x",NatTy)] (SPrint i str (SV i "x")))
+
 binary :: String -> BinaryOp -> Assoc -> Operator String () Identity STerm
 binary s f = Ex.Infix (reservedOp s >> return (SBinaryOp NoPos f))
 
@@ -118,7 +125,7 @@ atom :: P STerm
 atom =     (flip SConst <$> const <*> getPos)
        <|> flip SV <$> var <*> getPos
        <|> parens expr
-       <|> printOp
+       <|> (try printOp <|> printEthaOp)
 
 -- parsea un par (variable : tipo)
 binding :: P (Name, Ty)
@@ -179,12 +186,12 @@ fix = do i <- getPos
 
 let0 :: P ((Name, Ty), [(Name, Ty)])
 let0 = do
-  p@(v,ty) <- parens binding
+  p <- parens binding
   return (p, [])
 
 let1 :: P ((Name,Ty), [(Name,Ty)])
 let1 = try (do
-  t@(v,ty) <- binding
+  t <- binding
   return (t, []))
 
 let2 :: P ((Name,Ty), [(Name,Ty)])
@@ -203,10 +210,10 @@ letin = do
   t' <- expr
   return (t, t')
 
-letnoin :: P STerm
-letnoin = do
-  reservedOp "="
-  expr
+-- letnoin :: P STerm
+-- letnoin = do
+--   reservedOp "="
+--   expr
   
 
 letbool :: P Bool
@@ -221,16 +228,16 @@ letbool =
 
 letexp :: P STerm
 letexp = do
-  reserved "let"
   i <- getPos
+  reserved "let"
   b <- letbool
-  (p@(v,ty),xs) <- let0 <|> let1 <|> let2
+  (p,xs) <- let0 <|> let1 <|> let2
   (t, t') <- letin
   return (SLet i b p xs t t')
 
 -- | Parser de términos
 tm :: P STerm
-tm = app <|> lam <|> ifz <|> printOp <|> fix <|> letexp
+tm = app <|> lam <|> ifz <|> (try printOp <|> printEthaOp) <|> fix <|> letexp
 
 -- | Parser de declaraciones
 -- decl :: P (Decl STerm)
@@ -246,8 +253,9 @@ decl = do
   reserved "let"
   i <- getPos
   b <- letbool
-  (p@(v,ty),xs) <- let0 <|> let1 <|> let2
-  t <- letnoin
+  (p,xs) <- let0 <|> let1 <|> let2
+  reservedOp "="
+  t <- expr
   return (SDecl i b p xs t)
 
 -- | Parser de programas (listas de declaraciones) 
@@ -257,7 +265,7 @@ program = many decl
 -- | Parsea una declaración a un término
 -- Útil para las sesiones interactivas
 declOrTm :: P (Either (SDecl STerm) STerm)
-declOrTm =  try (Left <$> decl) <|> (Right <$> expr)
+declOrTm =  try (Right <$> expr) <|> (Left <$> decl) 
 
 -- Corre un parser, chequeando que se pueda consumir toda la entrada
 runP :: P a -> String -> String -> Either ParseError a
