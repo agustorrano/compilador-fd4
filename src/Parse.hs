@@ -139,8 +139,11 @@ bindings :: P [(Name, Ty)]
 bindings = 
   do
     xs <- parens multibindings
-    xs' <- bindings
-    return $ xs ++ xs'
+    try (do
+      xs' <- bindings 
+      return $ xs ++ xs')
+     <|>
+     return xs
 
 multibindings :: P [(Name, Ty)]
 multibindings =
@@ -153,24 +156,25 @@ multibindings =
 bindingstype :: P ([(Name, Ty)], Ty -> Ty)
 bindingstype =
   (do
-   (xs, ty) <- parens multitype
+   (xs, g) <- parens multitype
    (xs', f) <- bindingstype
-   return (xs ++ xs', FunTy ty . f))
+   return (xs ++ xs', g . f))
   <|>
   (do
     return ([], id))
 
-multitype :: P ([(Name, Ty)], Ty)
+multitype :: P ([(Name, Ty)], Ty -> Ty)
 multitype =
   do
    xs <- many var
    reservedOp ":"
    ty <- typeP
    let (ps, f) = multifun xs ty
-   return (ps, f ty) 
+   return (ps, f) 
 
 multifun :: [Name] -> Ty -> ([(Name,Ty)], Ty -> Ty)
-multifun [] ty = ([], id) 
+multifun [] ty = ([],id)
+-- multifun [x] ty = ([(x,ty)], id) 
 multifun (x:xs) ty =
   let (ps, f) = multifun xs ty
   in ((x, ty):ps, FunTy ty . f)

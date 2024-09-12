@@ -1,4 +1,4 @@
-type N = Nat
+# type N = Nat
 
 let rec gcd(n m : Nat):Nat =  ifz n then m else 
                             ifz m then n else 
