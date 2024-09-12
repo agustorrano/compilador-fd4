@@ -136,18 +136,44 @@ binding = do v <- var
 
 -- parsea una lista de pares (variable : tipo), encerrados por paréntesis
 bindings :: P [(Name, Ty)]
-bindings = many $ parens binding
+bindings = 
+  do
+    xs <- parens multibindings
+    xs' <- bindings
+    return $ xs ++ xs'
+
+multibindings :: P [(Name, Ty)]
+multibindings =
+  do
+    xs <- many var
+    reservedOp ":"
+    ty <- typeP
+    return [(y, ty) | y <- xs]
 
 bindingstype :: P ([(Name, Ty)], Ty -> Ty)
 bindingstype =
   (do
-   l@(v,ty') <- parens binding
-   (xs, f) <- bindingstype
-   return (l:xs, FunTy ty' . f))
+   (xs, ty) <- parens multitype
+   (xs', f) <- bindingstype
+   return (xs ++ xs', FunTy ty . f))
   <|>
   (do
     return ([], id))
 
+multitype :: P ([(Name, Ty)], Ty)
+multitype =
+  do
+   xs <- many var
+   reservedOp ":"
+   ty <- typeP
+   let (ps, f) = multifun xs ty
+   return (ps, f ty) 
+
+multifun :: [Name] -> Ty -> ([(Name,Ty)], Ty -> Ty)
+multifun [] ty = ([], id) 
+multifun (x:xs) ty =
+  let (ps, f) = multifun xs ty
+  in ((x, ty):ps, FunTy ty . f)
 
 lam :: P STerm
 lam = do i <- getPos
