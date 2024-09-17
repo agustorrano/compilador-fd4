@@ -109,7 +109,7 @@ printEthaOp = do
   i <- getPos
   reserved "print"
   str <- option "" stringLiteral
-  return (SLam i [("x",NatTy)] (SPrint i str (SV i "x")))
+  return (SLam i [(["x"],NatTy)] (SPrint i str (SV i "x")))
 
 binary :: String -> BinaryOp -> Assoc -> Operator String () Identity STerm
 binary s f = Ex.Infix (reservedOp s >> return (SBinaryOp NoPos f))
@@ -129,54 +129,32 @@ atom =     (flip SConst <$> const <*> getPos)
 
 -- parsea un par (variable : tipo)
 binding :: P (Name, Ty)
-binding = do 
+binding = do
   v <- var
   reservedOp ":"
   ty <- typeP
   return (v, ty)
 
--- parsea una lista de pares (variable : tipo), encerrados por paréntesis
-bindings :: P [(Name, Ty)]
+-- parsea una lista de pares ([variables] : tipo), encerrados por paréntesis
+bindings :: P [([Name], Ty)]
 bindings = do
   xs <- parens multibindings
-  try 
+  try
     (do
-    xs' <- bindings 
-    return $ xs ++ xs')
+    xs' <- bindings
+    return $ xs:xs')
     <|>
-    return xs
+    return [xs]
 
-multibindings :: P [(Name, Ty)]
+multibindings :: P ([Name], Ty)
 multibindings = do
   xs <- many var
   reservedOp ":"
   ty <- typeP
-  return [ (y, ty) | y <- xs ]
-
-bindingstype :: P ([(Name, Ty)], Ty -> Ty)
-bindingstype = 
-  (do
-  (xs, g) <- parens multitype
-  (xs', f) <- bindingstype
-  return (xs ++ xs', g . f))
-  <|>
-  (do return ([], id))
-
-multitype :: P ([(Name, Ty)], Ty -> Ty)
-multitype = do
-  xs <- many var
-  reservedOp ":"
-  ty <- typeP
-  return $ multifun xs ty
-
-multifun :: [Name] -> Ty -> ([(Name,Ty)], Ty -> Ty)
-multifun [] ty = ([],id)
-multifun (x:xs) ty =
-  let (ps, f) = multifun xs ty
-  in ((x, ty):ps, FunTy ty . f)
+  return (xs,ty)
 
 lam :: P STerm
-lam = do 
+lam = do
   i <- getPos
   reserved "fun"
   xs <- bindings
@@ -186,14 +164,14 @@ lam = do
 
 -- Nota el parser app también parsea un solo atom.
 app :: P STerm
-app = do 
+app = do
   i <- getPos
   f <- atom
   args <- many atom
   return (foldl (SApp i) f args)
 
 ifz :: P STerm
-ifz = do 
+ifz = do
   i <- getPos
   reserved "ifz"
   c <- expr
@@ -204,7 +182,7 @@ ifz = do
   return (SIfZ i c t e)
 
 fix :: P STerm
-fix = do 
+fix = do
   i <- getPos
   reserved "fix"
   (f, fty) <- parens binding
@@ -213,23 +191,23 @@ fix = do
   t <- expr
   return (SFix i (f,fty) xs t)
 
-let0 :: P ((Name, Ty), [(Name, Ty)])
+let0 :: P ((Name, Ty), [([Name], Ty)])
 let0 = do
   p <- parens binding
   return (p, [])
 
-let1 :: P ((Name,Ty), [(Name,Ty)])
+let1 :: P ((Name,Ty), [([Name],Ty)])
 let1 = try (do
   t <- binding
   return (t, []))
 
-let2 :: P ((Name,Ty), [(Name,Ty)])
+let2 :: P ((Name,Ty), [([Name],Ty)])
 let2 = do
   v <- var
-  (xs, f) <- bindingstype
+  xs <- bindings
   reservedOp ":"
   ty <- typeP
-  return ((v, f ty), xs)
+  return ((v, ty), xs)
 
 letin :: P (STerm, STerm)
 letin = do
@@ -254,9 +232,9 @@ letexp = do
   i <- getPos
   reserved "let"
   b <- letbool
-  (p, xs) <- let0 <|> let1 <|> let2
+  ((v,vty), xs) <- let0 <|> let1 <|> let2
   (t, t') <- letin
-  return (SLet i b p xs t t')
+  return (SLet i b v xs vty t t')
 
 -- | Parser de términos
 tm :: P STerm
@@ -279,7 +257,7 @@ program = many decl
 -- | Parsea una declaración a un término
 -- Útil para las sesiones interactivas
 declOrTm :: P (Either (SDecl STerm) STerm)
-declOrTm =  try (Right <$> expr) <|> (Left <$> decl) 
+declOrTm =  try (Right <$> expr) <|> (Left <$> decl)
 
 -- Corre un parser, chequeando que se pueda consumir toda la entrada
 runP :: P a -> String -> String -> Either ParseError a

@@ -11,11 +11,11 @@ Este módulo permite elaborar términos y declaraciones para convertirlas desde
 fully named (@STerm) a locally closed (@Term@)
 -}
 
-module Elab ( elab, elabDecl) where
+module Elab (elab, elabDecl) where
 
 import Lang
 import Subst
-import MonadFD4 (MonadFD4,failPosFD4)
+import MonadFD4 (MonadFD4, failPosFD4)
 
 -- | 'elab' transforma variables ligadas en índices de de Bruijn
 -- en un término dado. 
@@ -32,48 +32,74 @@ elab' env (SV p v) =
     else return $ V p (Global v)
 
 elab' _ (SConst p c) = do return $ Const p c
-elab' env (SLam p [(v,ty)] t) = 
-  do 
-    t' <- elab' (v:env) t
-    return $ Lam p v ty (close v t')
-elab' env (SLam p ((v,ty):xs) t) =
-  do
-   t' <- elab' (v:env) (SLam p xs t)
-   return $ Lam p v ty (close v t')
-elab' env (SFix p (f,fty) [(x,xty)] t) =
-  do
-    t' <- elab' (x:f:env) t
-    return $ Fix p f fty x xty (close2 f x t')
-elab' env (SFix p (f,fty) ((x,xty):xs) t) =
-  do
-    let t' = SLam p xs t
-    t'' <- elab' (x:f:env) t'
-    return $ Fix p f fty x xty (close2 f x t'')
+
+-- SLam
+elab' env (SLam p [([x],ty)] t) = do 
+  t' <- elab' (x:env) t
+  return $ Lam p x ty (close x t')
+
+elab' env (SLam p [(x:xs,ty)] t) = do
+  t' <- elab' (x:env) (SLam p [(xs,ty)] t)
+  return $ Lam p x ty (close x t')
+
+elab' env (SLam p (([x],ty):ls) t) = do
+  t' <- elab' (x:env) (SLam p ls t)
+  return $ Lam p x ty (close x t')
+
+elab' env (SLam p ((x:xs,ty):ls) t) = do
+  t' <- elab' (x:env) (SLam p ((xs,ty):ls) t)
+  return $ Lam p x ty (close x t')
+
+--SFix
+elab' env (SFix p (f,fty) [([x],ty)] t) = do
+  t' <- elab' (x:f:env) t
+  return $ Fix p f fty x ty (close2 f x t')
+
+elab' env (SFix p (f,fty) [(x:xs,ty)] t) = do
+  let t' = SLam p [(xs,ty)] t
+  t'' <- elab' (x:f:env) t'
+  return $ Fix p f fty x ty (close2 f x t'')
+
+elab' env (SFix p (f,fty) (([x],ty):ls) t) = do
+  let t' = SLam p ls t
+  t'' <- elab' (x:f:env) t'
+  return $ Fix p f fty x ty (close2 f x t'')
+
+elab' env (SFix p (f,fty) ((x:xs,ty):ls) t) = do
+  let t' = SLam p ((xs,ty):ls) t
+  t'' <- elab' (x:f:env) t'
+  return $ Fix p f fty x ty (close2 f x t'')
+
+--SIfZ
 elab' env (SIfZ p c t e) =
   do 
     t1 <- elab' env c
     t2 <- elab' env t
     t3 <- elab' env e
     return $ IfZ p t1 t2 t3
+
 -- Operadores binarios
 elab' env (SBinaryOp i o t u) =
   do
     t1 <- elab' env t
     t2 <- elab' env u
     return $ BinaryOp i o t1 t2
+
 -- Operador Print
 elab' env (SPrint i str t) =
   do
     t' <- elab' env t
     return $ Print i str t'
+
 -- Aplicaciones generales
 elab' env (SApp p h a) =
   do
     t <- elab' env h
     t' <- elab' env a
     return $ App p t t'
+
 -- Let para variables
-elab' env (SLet p b (v,vty) [] def body) =  
+elab' env (SLet p b v [] vty def body) =  
   if b
   then failPosFD4 p "Let Recursivo sin argumentos"
   else
@@ -81,18 +107,22 @@ elab' env (SLet p b (v,vty) [] def body) =
       t <- elab' env def
       t' <- elab' (v:env) body
       return $ Let p v vty t (close v t')
+
 -- Let para funciones
-elab' env (SLet p False (v,vty) xs def body) =  
+elab' env (SLet p False v xs vty def body) =  
   do
     t <- elab' env (SLam p xs def) 
     t' <- elab' (v:env) body
-    return $ Let p v vty t (close v t')
+    let f = getType xs
+    return $ Let p v (f vty) t (close v t')
+
 -- Let Rec
-elab' env (SLet p True l1@(v,vty) xs def body) =  
+elab' env (SLet p True v xs vty def body) =  
   do
-    t1 <- elab' env (SFix p l1 xs def)
+    let vty' = getType xs vty
+    t1 <- elab' env (SFix p (v,vty') xs def)
     t2 <- elab' (v:env) body
-    return $ Let p v vty t1 (close v t2)
+    return $ Let p v vty' t1 (close v t2)
 
 elabDecl :: MonadFD4 m => SDecl STerm ->  m (Decl Term)
 elabDecl (SDecl p b (v,vty) [] dec) = 
@@ -100,28 +130,14 @@ elabDecl (SDecl p b (v,vty) [] dec) =
   then failPosFD4 p "Let Recursivo sin argumentos"
   else do
     t <- elab dec
-    return $ Decl p v t 
+    return $ Decl p v vty t 
 elabDecl (SDecl p False (v,vty) xs dec) =
   do
+    let vty' = getType xs vty 
     t <- elab (SLam p xs dec) 
-    return $ Decl p v t 
+    return $ Decl p v vty' t 
 elabDecl (SDecl p True l1@(v,vty) xs dec) =
   do
-    t1 <- elab (SFix p l1 xs dec)
-    return $ Decl p v t1
-
--- elabDecl :: MonadFD4 m => SDecl STerm -> m (Decl Term)
--- elabDecl (SDecl p False (v,vty) [] dec) = 
---   do
---     t <- elab dec
---     return $ Decl p v t 
--- elabDecl (SDecl p True (v,vty) [] t) = 
---   failPosFD4 p "Let Recursivo sin argumentos"
--- elabDecl (SDecl p False (v,vty) xs dec) =
---   do 
---     t <- elab (SLam p xs dec)
---     return $ Decl p v t
--- elabDecl (SDecl p True l@(v,vty) xs dec) =
---   do
---     t <- elab dec
---     return $ Decl p v (SFix p l xs t)
+    let vty' = getType xs vty 
+    t1 <- elab (SFix p (v, vty') xs dec)
+    return $ Decl p v vty' t1

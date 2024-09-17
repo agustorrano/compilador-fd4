@@ -55,19 +55,19 @@ openAll gp ns (V p v) = case v of
 openAll gp ns (Const p c) = SConst (gp p) c
 openAll gp ns (Lam p x ty t) = 
   let x' = freshen ns x 
-  in SLam (gp p) [(x',ty)] (openAll gp (x':ns) (open x' t))
+  in SLam (gp p) [([x'],ty)] (openAll gp (x':ns) (open x' t))
 openAll gp ns (App p t u) = SApp (gp p) (openAll gp ns t) (openAll gp ns u)
 openAll gp ns (Fix p f fty x xty t) = 
   let 
     x' = freshen ns x
     f' = freshen (x':ns) f
-  in SFix (gp p) (f',fty) [(x',xty)] (openAll gp (x:f:ns) (open2 f' x' t))
+  in SFix (gp p) (f',fty) [([x'],xty)] (openAll gp (x:f:ns) (open2 f' x' t))
 openAll gp ns (IfZ p c t e) = SIfZ (gp p) (openAll gp ns c) (openAll gp ns t) (openAll gp ns e)
 openAll gp ns (Print p str t) = SPrint (gp p) str (openAll gp ns t)
 openAll gp ns (BinaryOp p op t u) = SBinaryOp (gp p) op (openAll gp ns t) (openAll gp ns u)
 openAll gp ns (Let p v ty m n) = 
     let v'= freshen ns v 
-    in  SLet (gp p) False (v',ty) [] (openAll gp ns m) (openAll gp (v':ns) (open v' n))
+    in  SLet (gp p) False v' [] ty (openAll gp ns m) (openAll gp (v':ns) (open v' n))
 
 --Colores
 constColor :: Doc AnsiStyle -> Doc AnsiStyle
@@ -149,7 +149,7 @@ t2doc at t@(SApp _ _ _) =
 t2doc at (SFix _ (f,fty) [vty] m) =
   parenIf at $
   sep [ sep [keywordColor (pretty "fix")
-                  , binding2doc (f, fty)
+                  , binding2doc ([f], fty)
                   , binding2doc vty
                   , opColor (pretty "->") ]
       , nest 2 (t2doc False m)
@@ -157,7 +157,7 @@ t2doc at (SFix _ (f,fty) [vty] m) =
 t2doc at (SFix i (f,fty) (vty:xs) m) =
   parenIf at $
   sep [ sep [keywordColor (pretty "fix")
-                  , binding2doc (f, fty)
+                  , binding2doc ([f], fty)
                   , binding2doc vty
                   , opColor (pretty "->") ]
       , nest 2 (t2doc False (SLam i xs m))
@@ -172,33 +172,46 @@ t2doc at (SPrint _ str t) =
   parenIf at $
   sep [keywordColor (pretty "print"), pretty (show str), t2doc True t]
 
-t2doc at (SLet _ False (v,ty) [] t t') =
+t2doc at (SLet _ False v [] ty t t') =
   parenIf at $
   sep [
     sep [keywordColor (pretty "let")
-       , binding2doc (v,ty)
+       , name2doc v
+       , opColor (pretty ":")
+       , ty2doc ty
        , opColor (pretty "=") ]
   , nest 2 (t2doc False t)
   , keywordColor (pretty "in")
   , nest 2 (t2doc False t') ]
   -- Let Fun
-t2doc at (SLet i False (v,ty) xs t t') =
+t2doc at (SLet i False v xs ty t t') =
   parenIf at $
   sep [
-    sep [keywordColor (pretty "let")
-       , binding2doc (v,ty)
-       , opColor (pretty "=") ]
-  , nest 2 (t2doc False (SLam i xs t))
+    sep $ [keywordColor (pretty "let") , name2doc v]
+          ++
+          [binding2doc x | x <- xs]
+          ++
+          [opColor (pretty ":")
+          , ty2doc ty
+          , opColor (pretty "=") ]
+  , nest 2 (t2doc False t)
   , keywordColor (pretty "in")
   , nest 2 (t2doc False t') ]
+  where getCod (FunTy _ y) = y
   --Let Rec
-t2doc at (SLet i True (v,ty) xs t t') =
+t2doc at (SLet i True v xs ty t t') =
   parenIf at $
   sep [
-    sep [keywordColor (pretty "let")
-       , binding2doc (v,ty)
-       , opColor (pretty "=") ]
-  , nest 2 (t2doc False (SFix i (v,ty) xs t))
+    sep $ [keywordColor (pretty "let")
+        , keywordColor (pretty "rec")
+        , name2doc v]
+        ++
+        [binding2doc x | x <- xs]
+        ++
+        [opColor (pretty ":")
+        , ty2doc ty 
+        , opColor (pretty "=")]
+  , nest 2 (t2doc False t)
   , keywordColor (pretty "in")
   , nest 2 (t2doc False t') ]
 
@@ -206,9 +219,9 @@ t2doc at (SBinaryOp _ o a b) =
   parenIf at $
   t2doc True a <+> binary2doc o <+> t2doc True b
 
-binding2doc :: (Name, Ty) -> Doc AnsiStyle
-binding2doc (x, ty) =
-  parens (sep [name2doc x, pretty ":", ty2doc ty])
+binding2doc :: ([Name], Ty) -> Doc AnsiStyle
+binding2doc (xs, ty) =
+  parens (sep ([name2doc x | x <- xs] ++ [pretty ":", ty2doc ty]))
 
 -- | Pretty printing de términos (String)
 pp :: MonadFD4 m => TTerm -> m String
@@ -216,14 +229,14 @@ pp :: MonadFD4 m => TTerm -> m String
 {- pp = show -}
 pp t = do
        gdecl <- gets glb
-       return (render . t2doc False $ openAll fst (map declName gdecl) t)
+       return (render . t2doc False $ resugaring $ openAll fst (map declName gdecl) t)
 
 render :: Doc AnsiStyle -> String
 render = unpack . renderStrict . layoutSmart defaultLayoutOptions
 
 -- | Pretty printing de declaraciones
 ppDecl :: MonadFD4 m => Decl TTerm -> m String
-ppDecl (Decl p x t) = do 
+ppDecl (Decl p x ty t) = do 
   gdecl <- gets glb
   return (render $ sep [defColor (pretty "let")
                        , name2doc x 

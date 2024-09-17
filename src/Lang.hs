@@ -1,6 +1,7 @@
 {-# LANGUAGE DeriveFunctor #-}
 {-# LANGUAGE GADTs #-}
 {-# LANGUAGE EmptyDataDeriving #-}
+{-# OPTIONS_GHC -Wno-incomplete-patterns #-}
 
 {-|
 Module      : Lang
@@ -27,13 +28,13 @@ import           Data.List.Extra                ( nubSort )
 data STm info ty var =
     SV info var
   | SConst info Const
-  | SLam info [(var, ty)] (STm info ty var)  -- Ahora tenemos lista de variables 
+  | SLam info [([var], ty)] (STm info ty var)  -- Ahora tenemos lista de variables 
   | SApp info (STm info ty var) (STm info ty var)
   | SPrint info String (STm info ty var)
   | SBinaryOp info BinaryOp (STm info ty var) (STm info ty var)
-  | SFix info (var, ty) [(var, ty)] (STm info ty var)
+  | SFix info (var, ty) [([var], ty)] (STm info ty var)
   | SIfZ info (STm info ty var) (STm info ty var) (STm info ty var)
-  | SLet info Bool (var, ty) [(var, ty)] (STm info ty var) (STm info ty var) -- Bool -> Rec or Not Rec; [] -> Let variable; (a:as) -> Let fun
+  | SLet info Bool var [([var], ty)] ty (STm info ty var) (STm info ty var) -- Bool -> Rec or Not Rec; [] -> Let variable; (a:as) -> Let fun
   deriving (Show, Functor)
 
 -- | AST de Tipos
@@ -59,7 +60,7 @@ data SDecl a = SDecl
     sdeclPos :: Pos,
     sdeclRec :: Bool,
     sdeclVarTy :: (Name, Ty),
-    sdeclList :: [(Name, Ty)],
+    sdeclList :: [([Name], Ty)],
     sdeclBody :: a
   }
   deriving (Show, Functor)
@@ -67,6 +68,7 @@ data SDecl a = SDecl
 data Decl a = Decl
   { declPos  :: Pos
   , declName :: Name
+  , declTy   :: Ty
   , declBody :: a
   }
   deriving (Show, Functor)
@@ -156,3 +158,57 @@ freeVars tm = nubSort $ go tm [] where
   go (IfZ _ c t e             ) xs = go c $ go t $ go e xs
   go (Const _ _               ) xs = xs
   go (Let _ _ _ e (Sc1 t)     ) xs = go e (go t xs)
+
+
+-- Obtenemos el tipo de la función a partir de la lista de variables,
+-- devolviendo una función para despues completar con el tipo de retorno.
+getType :: [([Name],Ty)] -> (Ty -> Ty)
+getType [] = id
+getType (([x],ty):ls) =
+  let g = getType ls
+  in FunTy ty . g
+getType ((x:xs,ty):ls) =
+  let g = getType ((xs,ty):ls)
+  in FunTy ty . g
+
+-- Obetemos el tipo de retorno, desarmando el tipo de la función por cada una
+-- de las variables que toma com argumento.
+unType :: Ty -> [([Name],Ty)] -> Ty
+unType ty [] = ty 
+unType (FunTy _ ty) (([x],ty'):xs) = unType ty xs
+unType (FunTy _ ty) ((x:xs',ty'):xs) = unType ty ((xs',ty'):xs)
+
+-- Convertimos a términos azucarados, ya que openAll nos da la representación
+-- sin azucar de STerm. 
+resugaring :: STerm -> STerm
+resugaring (SLam i [l@(xs,ty)] t) = 
+  let t'' = resugaring t
+  in case t'' of
+    SLam _ ls@((xs',ty'):ps) t' ->
+      if ty == ty'
+      then SLam i ((xs ++ xs',ty):ps) t' 
+      else SLam i (l:ls) t'
+    _ -> 
+      SLam i [l] t''
+
+resugaring (SFix i (f, fty) [l@(xs,ty)] t) =
+  let t'' = resugaring t
+  in case t'' of
+    SLam _ ls@((xs',ty'):ps) t' ->
+      if ty == ty'
+      then SFix i (f, fty) ((xs ++ xs',ty):ps) t'
+      else SFix i (f, fty) (l:ls) t'
+    _ -> 
+      SFix i (f, fty) [l] t''
+
+resugaring (SLet i False f [] fty t1 t2) =
+  let (t1', t2') = (resugaring t1, resugaring t2)
+  in case t1' of
+    SLam _ ls t ->
+      SLet i False f ls (unType fty ls) t t2'
+    SFix _ _ ls t ->
+      SLet i True f ls (unType fty ls) t t2' 
+    _ -> 
+      SLet i False f [] fty t1' t2'
+
+resugaring t = t
