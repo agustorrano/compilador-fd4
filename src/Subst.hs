@@ -19,7 +19,7 @@ import Lang
 import Common
 
 -- Esta es una función auxiliar que usan el resto de las funciones de este módulo
--- para modificar las vsriables (ligadas y libres) de un término
+-- para modificar las variables (ligadas y libres) de un término
 varChanger :: (Int -> info -> Name -> Tm info Var) --que hacemos con las variables localmente libres
            -> (Int -> info -> Int ->  Tm info Var) --que hacemos con los indices de De Bruijn
            -> Tm info Var -> Tm info Var

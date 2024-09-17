@@ -129,90 +129,89 @@ atom =     (flip SConst <$> const <*> getPos)
 
 -- parsea un par (variable : tipo)
 binding :: P (Name, Ty)
-binding = do v <- var
-             reservedOp ":"
-             ty <- typeP
-             return (v, ty)
+binding = do 
+  v <- var
+  reservedOp ":"
+  ty <- typeP
+  return (v, ty)
 
 -- parsea una lista de pares (variable : tipo), encerrados por paréntesis
 bindings :: P [(Name, Ty)]
-bindings = 
-  do
-    xs <- parens multibindings
-    try (do
-      xs' <- bindings 
-      return $ xs ++ xs')
-     <|>
-     return xs
+bindings = do
+  xs <- parens multibindings
+  try 
+    (do
+    xs' <- bindings 
+    return $ xs ++ xs')
+    <|>
+    return xs
 
 multibindings :: P [(Name, Ty)]
-multibindings =
-  do
-    xs <- many var
-    reservedOp ":"
-    ty <- typeP
-    return [(y, ty) | y <- xs]
+multibindings = do
+  xs <- many var
+  reservedOp ":"
+  ty <- typeP
+  return [ (y, ty) | y <- xs ]
 
 bindingstype :: P ([(Name, Ty)], Ty -> Ty)
-bindingstype =
+bindingstype = 
   (do
-   (xs, g) <- parens multitype
-   (xs', f) <- bindingstype
-   return (xs ++ xs', g . f))
+  (xs, g) <- parens multitype
+  (xs', f) <- bindingstype
+  return (xs ++ xs', g . f))
   <|>
-  (do
-    return ([], id))
+  (do return ([], id))
 
 multitype :: P ([(Name, Ty)], Ty -> Ty)
-multitype =
-  do
-   xs <- many var
-   reservedOp ":"
-   ty <- typeP
-   let (ps, f) = multifun xs ty
-   return (ps, f) 
+multitype = do
+  xs <- many var
+  reservedOp ":"
+  ty <- typeP
+  return $ multifun xs ty
 
 multifun :: [Name] -> Ty -> ([(Name,Ty)], Ty -> Ty)
 multifun [] ty = ([],id)
--- multifun [x] ty = ([(x,ty)], id) 
 multifun (x:xs) ty =
   let (ps, f) = multifun xs ty
   in ((x, ty):ps, FunTy ty . f)
 
 lam :: P STerm
-lam = do i <- getPos
-         reserved "fun"
-        --  (v,ty) <- parens binding
-         xs <- bindings
-         reservedOp "->"
-         t <- expr
-         return (SLam i xs t)
+lam = do 
+  i <- getPos
+  reserved "fun"
+  xs <- bindings
+  reservedOp "->"
+  t <- expr
+  return (SLam i xs t)
 
 -- Nota el parser app también parsea un solo atom.
 app :: P STerm
-app = do i <- getPos
-         f <- atom
-         args <- many atom
-         return (foldl (SApp i) f args)
+app = do 
+  i <- getPos
+  f <- atom
+  args <- many atom
+  return (foldl (SApp i) f args)
 
 ifz :: P STerm
-ifz = do i <- getPos
-         reserved "ifz"
-         c <- expr
-         reserved "then"
-         t <- expr
-         reserved "else"
-         e <- expr
-         return (SIfZ i c t e)
+ifz = do 
+  i <- getPos
+  reserved "ifz"
+  c <- expr
+  reserved "then"
+  t <- expr
+  reserved "else"
+  e <- expr
+  return (SIfZ i c t e)
 
 fix :: P STerm
-fix = do i <- getPos
-         reserved "fix"
-         (f, fty) <- parens binding
-         xs <- bindings
-         reservedOp "->"
-         t <- expr
-         return (SFix i (f,fty) xs t)
+fix = do 
+  i <- getPos
+  reserved "fix"
+  (f, fty) <- parens binding
+  xs <- bindings
+  reservedOp "->"
+  t <- expr
+  return (SFix i (f,fty) xs t)
 
 let0 :: P ((Name, Ty), [(Name, Ty)])
 let0 = do
@@ -240,12 +239,6 @@ letin = do
   t' <- expr
   return (t, t')
 
--- letnoin :: P STerm
--- letnoin = do
---   reservedOp "="
---   expr
-  
-
 letbool :: P Bool
 letbool =
   (do
@@ -261,7 +254,7 @@ letexp = do
   i <- getPos
   reserved "let"
   b <- letbool
-  (p,xs) <- let0 <|> let1 <|> let2
+  (p, xs) <- let0 <|> let1 <|> let2
   (t, t') <- letin
   return (SLet i b p xs t t')
 
@@ -269,15 +262,6 @@ letexp = do
 tm :: P STerm
 tm = app <|> lam <|> ifz <|> (try printOp <|> printEthaOp) <|> fix <|> letexp
 
--- | Parser de declaraciones
--- decl :: P (Decl STerm)
--- decl = do
---      i <- getPos
---      reserved "let"
---      v <- var
---      reservedOp "="
---      t <- expr
---      return (Decl i v t)
 decl:: P (SDecl STerm)
 decl = do
   reserved "let"
