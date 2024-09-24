@@ -29,6 +29,7 @@ tyEnv g = map (\(Decl _ n ty _) -> (n, ty))  (glb g)
 -}
 data Mode =
     Interactive
+  | CEK
   | Typecheck
   | Eval
 data Conf = Conf {

@@ -16,7 +16,7 @@ import System.Console.Haskeline ( defaultSettings, getInputLine, runInputT, Inpu
 import Control.Monad.Catch (MonadMask)
 
 import Control.Monad.Trans
-import Data.List (nub, isPrefixOf, intercalate )
+import Data.List ( nub, isPrefixOf, intercalate )
 import Data.Char ( isSpace )
 import Control.Exception ( catch , IOException )
 import System.IO ( hPrint, stderr, hPutStrLn )
@@ -28,6 +28,7 @@ import Options.Applicative
 import Global
 import Errors
 import Lang
+import CEK 
 import Parse ( P, tm, program, declOrTm, runP )
 import Elab ( elab, elabDecl )
 import Eval ( eval )
@@ -46,6 +47,7 @@ parseMode = (,) <$>
       (flag' Typecheck ( long "typecheck" <> short 't' <> help "Chequear tipos e imprimir el término")
       <|> flag Interactive Interactive ( long "interactive" <> short 'i' <> help "Ejecutar en forma interactiva")
       <|> flag Eval        Eval        (long "eval" <> short 'e' <> help "Evaluar programa")
+      <|> flag CEK CEK (long "CEK" <> short 'k' <> help "Evaluar programa con máquina abstracta CEK")
       )
    <*> pure False
 
@@ -143,6 +145,11 @@ handleDecl d = do
               td <- typecheckDecl d
               ed <- evalDecl td
               addDecl ed
+          CEK -> do
+              (Decl p x ty tt) <- typecheckDecl d
+              val <- evalCEK tt
+              te <- transform val
+              addDecl (Decl p x ty te) 
 
       where
         typecheckDecl :: MonadFD4 m => SDecl STerm -> m (Decl TTerm)
