@@ -241,6 +241,6 @@ ppDecl (Decl p x ty t) = do
   return (render $ sep [defColor (pretty "let")
                        , name2doc x 
                        , defColor (pretty "=")] 
-                   <+> nest 2 (t2doc False (openAll fst (map declName gdecl) t)))
+                   <+> nest 2 (t2doc False $ resugaring (openAll fst (map declName gdecl) t)))
                          
 
