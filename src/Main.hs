@@ -47,7 +47,7 @@ parseMode = (,) <$>
       (flag' Typecheck ( long "typecheck" <> short 't' <> help "Chequear tipos e imprimir el término")
       <|> flag Interactive Interactive ( long "interactive" <> short 'i' <> help "Ejecutar en forma interactiva")
       <|> flag Eval        Eval        (long "eval" <> short 'e' <> help "Evaluar programa")
-      <|> flag CEK CEK (long "CEK" <> short 'k' <> help "Evaluar programa con máquina abstracta CEK")
+      <|> flag CEK CEK (long "cek" <> short 'k' <> help "Evaluar programa con máquina abstracta CEK")
       )
    <*> pure False
 
