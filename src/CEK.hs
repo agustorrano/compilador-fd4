@@ -52,6 +52,7 @@ destroy (VClos c) (KArg e t:k) = seek t e (KClos c:k)
 destroy v (KClos (VClosfun e t):k) = seek t (v:e) k
 destroy v (KClos l@(VClosfix e t):k) = seek t (v:VClos l:e) k
 destroy v (KPrint s:k) = do {printFD4 s; destroy v k}
+destroy v (KLet e t:k) = seek t (v:e) k
 destroy n (KBopt e op t:k) = seek t e (KBopv n op:k)
 destroy n (KBopv v op:k) =
   let f (VNat (CNat i)) = i
