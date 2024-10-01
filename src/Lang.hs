@@ -49,11 +49,14 @@ data STy =
 data Ty =
       NatTy (Maybe Name)
     | FunTy (Maybe Name) Ty Ty
-    deriving (Show,Eq)
+    deriving (Show)
+
+instance Eq Ty where
+  NatTy _ == NatTy _ = True
+  FunTy _ t1 t2 == FunTy _ t1' t2' = 
+    t1 == t1' && t2 == t2'
 
 type Name = String
-
-type TyName = ()
 
 type STerm = STm Pos STy Name -- ^ 'STm' tiene 'Name's como variables ligadas y libres y globales, guarda posición  
 
@@ -65,29 +68,32 @@ data BinaryOp = Add | Sub
 
 -- | tipo de datos de declaraciones superficiales
 -- data SDecl info var ty a = SDLet info Bool (var, ty) [(var, ty)] a
-data SDecl a = SDecl
+data SDecl = 
+    SDecl
   {
-    sdeclPos :: Pos,
-    sdeclRec :: Bool,
-    sdeclVarTy :: (Name, STy),
-    sdeclList :: [([Name], STy)],
-    sdeclBody :: a
+    sdeclPos    :: Pos,
+    sdeclRec    :: Bool,
+    sdeclVarTy  :: (Name, STy),
+    sdeclList   :: [([Name], STy)],
+    sdeclBody   :: STerm
   } 
   | SDeclTy
-  { sdeclPosTy :: Pos,
-    sdeclName :: Name,
+  { 
+    sdeclPosTy  :: Pos,
+    sdeclName   :: Name,
     sdeclBodyTy :: STy
-  } deriving (Show, Functor)
+  } 
+    deriving (Show)
+
 -- | tipo de datos de declaraciones, parametrizado por el tipo del cuerpo de la declaración
-data Decl a = Decl
-  { declPos  :: Pos
-  , declName :: Name
-  , declTy   :: Ty
-  , declBody :: a
+data Decl a = 
+    Decl
+  { 
+    declPos  :: Pos,
+    declName :: Name,
+    declBody :: a
   }
-  deriving (Show, Functor)
-
-
+    deriving (Show, Functor)
 
 -- | AST de los términos. 
 --   - info es información extra que puede llevar cada nodo. 
@@ -110,11 +116,12 @@ type Term = Tm Pos Var       -- ^ 'Tm' con índices de De Bruijn como variables 
 type TTerm = Tm (Pos,Ty) Var -- ^ 'Tm' con índices de De Bruijn como variables ligadas, y nombres para libres y globales, guarda posición y tipo
 
 type Module = [Decl TTerm]
+
 data Var =
     Bound !Int
   | Free Name
   | Global Name
-  deriving Show
+    deriving Show
 
 -- Scope es un término con una o dos variables que escapan.
 newtype Scope info var = Sc1 (Tm info var)
@@ -172,7 +179,6 @@ freeVars tm = nubSort $ go tm [] where
   go (IfZ _ c t e             ) xs = go c $ go t $ go e xs
   go (Const _ _               ) xs = xs
   go (Let _ _ _ e (Sc1 t)     ) xs = go e (go t xs)
-
 
 -- Obtenemos el tipo de la función a partir de la lista de variables,
 -- devolviendo una función para despues completar con el tipo de retorno.

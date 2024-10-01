@@ -29,10 +29,28 @@ import Global
 import Errors
 import Lang
 import Parse ( P, tm, program, declOrTm, runP )
-import Elab ( elab, elabDecl )
+import Elab ( elab, elabDeclTerm, elabDeclTy )
 import Eval ( eval )
-import PPrint ( pp , ppTy, ppDecl )
+import PPrint ( pp , ppTy, ppDeclTerm)
 import MonadFD4
+    ( when,
+      MonadError(throwError),
+      MonadState(get),
+      addTermDecl,
+      addTyDecl,
+      catchErrors,
+      eraseLastFileDecls,
+      getInter,
+      getLastFile,
+      getMode,
+      lookupTermDecl,
+      printFD4,
+      runFD4,
+      setInter,
+      setLastFile,
+      gets,
+      FD4,
+      MonadFD4 )
 import TypeChecker ( tc, tcDecl )
 
 prompt :: String
@@ -95,7 +113,7 @@ repl args = do
                        b <- lift $ catchErrors $ handleCommand c
                        maybe loop (`when` loop) b
 
-loadFile ::  MonadFD4 m => FilePath -> m [SDecl STerm]
+loadFile ::  MonadFD4 m => FilePath -> m [SDecl]
 loadFile f = do
     let filename = reverse(dropWhile isSpace (reverse f))
     x <- liftIO $ catch (readFile filename)
@@ -120,36 +138,41 @@ parseIO filename p x = case runP p x filename of
                   Right r -> return r
 
 evalDecl :: MonadFD4 m => Decl TTerm -> m (Decl TTerm)
-evalDecl (Decl p x ty e) = do
+evalDecl (Decl p x e) = do
     e' <- eval e
-    return (Decl p x ty e')
+    return (Decl p x e')
 
-handleDecl ::  MonadFD4 m => SDecl STerm -> m ()
-handleDecl d = do
-        m <- getMode
-        case m of
-          Interactive -> do
-              (Decl p x ty tt) <- typecheckDecl d
-              te <- eval tt
-              addDecl (Decl p x ty te)
-          Typecheck -> do
-              f <- getLastFile
-              printFD4 ("Chequeando tipos de "++f)
-              td <- typecheckDecl d
-              addDecl td
-              ppterm <- ppDecl td
-              printFD4 ppterm
-          Eval -> do
-              td <- typecheckDecl d
-              ed <- evalDecl td
-              addDecl ed
+handleDecl ::  MonadFD4 m => SDecl -> m ()
+handleDecl d@SDecl {..} = 
+  do
+    m <- getMode
+    case m of
+      Interactive -> do
+          (Decl p x tt) <- typecheckDecl d
+          te <- eval tt
+          addTermDecl (Decl p x te)
+      Typecheck -> do
+          f <- getLastFile
+          printFD4 ("Chequeando tipos de "++f)
+          td <- typecheckDecl d
+          addTermDecl td
+          ppterm <- ppDeclTerm td
+          printFD4 ppterm
+      Eval -> do
+          td <- typecheckDecl d
+          ed <- evalDecl td
+          addTermDecl ed
+  where
+    typecheckDecl :: MonadFD4 m => SDecl -> m (Decl TTerm)
+    typecheckDecl ss =
+      do
+        (ty,t') <- elabDeclTerm ss
+        tcDecl ty t'
+handleDecl d@SDeclTy {..} =
+  do
+    d' <- elabDeclTy d
+    addTyDecl d'
 
-      where
-        typecheckDecl :: MonadFD4 m => SDecl STerm -> m (Decl TTerm)
-        typecheckDecl ss =
-          do
-            t' <- elabDecl ss
-            tcDecl t'
 
 data Command = Compile CompileForm
              | PPrint String
@@ -215,7 +238,7 @@ handleCommand cmd = do
        Quit   ->  return False
        Noop   ->  return True
        Help   ->  printFD4 (helpTxt commands) >> return True
-       Browse ->  do  printFD4 (unlines (reverse (nub (map declName glb))))
+       Browse ->  do  printFD4 (unlines (reverse (nub (map declName glbTerm))))
                       return True
        Compile c ->
                   do  case c of
@@ -237,7 +260,7 @@ handleTerm ::  MonadFD4 m => STerm -> m ()
 handleTerm t = do
          t' <- elab t
          s <- get
-         tt <- tc t' (tyEnv s)
+         tt <- tc t' (tyTermEnv s)
          te <- eval tt
          ppte <- pp te
          printFD4 (ppte ++ " : " ++ ppTy (getTy tt))
@@ -247,10 +270,10 @@ printPhrase x =
   do
     x' <- parseIO "<interactive>" tm x
     ex <- elab x'
-    tyenv <- gets tyEnv
+    tyenv <- gets tyTermEnv
     tex <- tc ex tyenv
     t  <- case x' of
-           (SV p f) -> fromMaybe tex <$> lookupDecl f
+           (SV p f) -> fromMaybe tex <$> lookupTermDecl f
            _       -> return tex
     printFD4 "STerm:"
     printFD4 (show x')
@@ -262,6 +285,6 @@ typeCheckPhrase x = do
          t <- parseIO "<interactive>" tm x
          t' <- elab t
          s <- get
-         tt <- tc t' (tyEnv s)
+         tt <- tc t' (tyTermEnv s)
          let ty = getTy tt
          printFD4 (ppTy ty)

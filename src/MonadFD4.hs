@@ -117,7 +117,7 @@ lookupTyDecl :: MonadFD4 m => Name -> m (Maybe Ty)
 lookupTyDecl nm = do
     s <- get
     case filter (hasName nm) (glbTy s) of
-        (Decl { declTy = ty}):_ -> return (Just ty)
+        (Decl { declBody = ty}):_ -> return (Just ty)
         [] -> return Nothing
 
 

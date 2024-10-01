@@ -15,7 +15,8 @@ module PPrint (
     pp,
     ppTy,
     ppName,
-    ppDecl
+    ppDeclTerm,
+    ppDeclTy
     ) where
 
 import Lang
@@ -42,6 +43,23 @@ freshen :: [Name] -> Name -> Name
 freshen ns n = let cands = n : map (\i -> n ++ show i) [0..] 
                in head (filter (`notElem` ns) cands)
 
+
+openTy :: Ty -> STy
+openTy t = 
+  let name = getName t
+  in case name of
+    (Just n) -> SNameTy n
+    Nothing -> openTy' t
+  where
+    getName (NatTy n) = n
+    getName (FunTy n _ _) = n
+
+openTy' :: Ty -> STy
+openTy' (NatTy _ ) = SNatTy
+openTy' (FunTy _ t t') =
+  let (st, st') = (openTy t, openTy t')
+  in SFunTy st st'
+
 -- | 'openAll' convierte términos locally nameless
 -- a términos fully named abriendo todos las variables de ligadura que va encontrando
 -- Debe tener cuidado de no abrir términos con nombres que ya fueron abiertos.
@@ -55,19 +73,19 @@ openAll gp ns (V p v) = case v of
 openAll gp ns (Const p c) = SConst (gp p) c
 openAll gp ns (Lam p x ty t) = 
   let x' = freshen ns x 
-  in SLam (gp p) [([x'],ty)] (openAll gp (x':ns) (open x' t))
+  in SLam (gp p) [([x'],openTy ty)] (openAll gp (x':ns) (open x' t))
 openAll gp ns (App p t u) = SApp (gp p) (openAll gp ns t) (openAll gp ns u)
 openAll gp ns (Fix p f fty x xty t) = 
   let 
     x' = freshen ns x
     f' = freshen (x':ns) f
-  in SFix (gp p) (f',fty) [([x'],xty)] (openAll gp (x:f:ns) (open2 f' x' t))
+  in SFix (gp p) (f',openTy fty) [([x'],openTy xty)] (openAll gp (x:f:ns) (open2 f' x' t))
 openAll gp ns (IfZ p c t e) = SIfZ (gp p) (openAll gp ns c) (openAll gp ns t) (openAll gp ns e)
 openAll gp ns (Print p str t) = SPrint (gp p) str (openAll gp ns t)
 openAll gp ns (BinaryOp p op t u) = SBinaryOp (gp p) op (openAll gp ns t) (openAll gp ns u)
 openAll gp ns (Let p v ty m n) = 
     let v'= freshen ns v 
-    in  SLet (gp p) False v' [] ty (openAll gp ns m) (openAll gp (v':ns) (open v' n))
+    in  SLet (gp p) False v' [] (openTy ty) (openAll gp ns m) (openAll gp (v':ns) (open v' n))
 
 --Colores
 constColor :: Doc AnsiStyle -> Doc AnsiStyle
@@ -94,14 +112,15 @@ ppName :: Name -> String
 ppName = id
 
 -- | Pretty printer para tipos (Doc)
-ty2doc :: Ty -> Doc AnsiStyle
-ty2doc NatTy     = typeColor (pretty "Nat")
-ty2doc (FunTy x@(FunTy _ _) y) = sep [parens (ty2doc x), typeOpColor (pretty "->"),ty2doc y]
-ty2doc (FunTy x y) = sep [ty2doc x, typeOpColor (pretty "->"),ty2doc y] 
+ty2doc :: STy -> Doc AnsiStyle
+ty2doc SNatTy = typeColor (pretty "Nat")
+ty2doc (SFunTy x@(SFunTy _ _) y) = sep [parens (ty2doc x), typeOpColor (pretty "->"),ty2doc y]
+ty2doc (SFunTy x y) = sep [ty2doc x, typeOpColor (pretty "->"),ty2doc y] 
+ty2doc (SNameTy n) = typeColor (pretty n)
 
 -- | Pretty printer para tipos (String)
 ppTy :: Ty -> String
-ppTy = render . ty2doc
+ppTy = render . ty2doc . openTy
 
 c2doc :: Const -> Doc AnsiStyle
 c2doc (CNat n) = constColor (pretty (show n))
@@ -197,7 +216,7 @@ t2doc at (SLet i False v xs ty t t') =
   , nest 2 (t2doc False t)
   , keywordColor (pretty "in")
   , nest 2 (t2doc False t') ]
-  where getCod (FunTy _ y) = y
+  where getCod (FunTy _ _ y) = y
   --Let Rec
 t2doc at (SLet i True v xs ty t t') =
   parenIf at $
@@ -219,7 +238,7 @@ t2doc at (SBinaryOp _ o a b) =
   parenIf at $
   t2doc True a <+> binary2doc o <+> t2doc True b
 
-binding2doc :: ([Name], Ty) -> Doc AnsiStyle
+binding2doc :: ([Name], STy) -> Doc AnsiStyle
 binding2doc (xs, ty) =
   parens (sep ([name2doc x | x <- xs] ++ [pretty ":", ty2doc ty]))
 
@@ -235,12 +254,20 @@ render :: Doc AnsiStyle -> String
 render = unpack . renderStrict . layoutSmart defaultLayoutOptions
 
 -- | Pretty printing de declaraciones
-ppDecl :: MonadFD4 m => Decl TTerm -> m String
-ppDecl (Decl p x ty t) = do 
-  gdecl <- gets glb
+ppDeclTerm :: MonadFD4 m => Decl TTerm -> m String
+ppDeclTerm (Decl p x t) = do 
+  gdecl <- gets glbTerm
   return (render $ sep [defColor (pretty "let")
                        , name2doc x 
                        , defColor (pretty "=")] 
                    <+> nest 2 (t2doc False $ resugaring (openAll fst (map declName gdecl) t)))
+
+ppDeclTy :: MonadFD4 m => Decl Ty -> m String
+ppDeclTy (Decl p x t) = do 
+  gdecl <- gets glbTy
+  return (render $ sep [defColor (pretty "type")
+                       , name2doc x 
+                       , defColor (pretty "=")] 
+                   <+> nest 2 (ty2doc (openTy t)))
                          
 

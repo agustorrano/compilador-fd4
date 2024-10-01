@@ -246,7 +246,7 @@ letexp = do
 tm :: P STerm
 tm = app <|> lam <|> ifz <|> (try printOp <|> printEthaOp) <|> fix <|> letexp
 
-declTerm:: P (SDecl STerm)
+declTerm:: P SDecl
 declTerm = do
   reserved "let"
   i <- getPos
@@ -256,7 +256,7 @@ declTerm = do
   t <- expr
   return (SDecl i b p xs t)
 
-declPTy :: P (SDecl STerm)
+declPTy :: P SDecl
 declPTy = do 
   reserved "type"
   i <- getPos
@@ -266,12 +266,12 @@ declPTy = do
   return (SDeclTy i n ty)
 
 -- | Parser de programas (listas de declaraciones) 
-program :: P [SDecl STerm]
+program :: P [SDecl]
 program = many (declTerm <|> declPTy)
 
 -- | Parsea una declaración a un término
 -- Útil para las sesiones interactivas
-declOrTm :: P (Either (SDecl STerm) STerm)
+declOrTm :: P (Either SDecl STerm)
 declOrTm =  try (Right <$> expr) <|> (Left <$> (declTerm <|> declPTy))
 
 -- Corre un parser, chequeando que se pueda consumir toda la entrada

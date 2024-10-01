@@ -14,7 +14,7 @@ module Eval where
 import Common ( abort )
 import Lang
 import Subst ( subst2, subst )
-import MonadFD4 ( MonadFD4, lookupDecl, failFD4, printFD4 )
+import MonadFD4 ( MonadFD4, lookupTermDecl, failFD4, printFD4 )
 import PPrint ( ppName, pp )
 
 -- | Semántica de operadores binarios
@@ -26,7 +26,7 @@ semOp Sub x y = max 0 (x - y)
 eval ::  MonadFD4 m => TTerm -> m TTerm
 eval (V _ (Global nm)) = do
   -- unfold and keep going
-  mtm <- lookupDecl nm
+  mtm <- lookupTermDecl nm
   case mtm of
     Nothing -> failFD4 $ "Error de ejecución: variable no declarada: " ++ ppName nm
     Just t -> eval t
