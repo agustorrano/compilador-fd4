@@ -35,7 +35,7 @@ data STm info ty var =
   | SFix info (var, ty) [([var], ty)] (STm info ty var)
   | SIfZ info (STm info ty var) (STm info ty var) (STm info ty var)
   | SLet info Bool var [([var], ty)] ty (STm info ty var) (STm info ty var) -- Bool -> Rec or Not Rec; [] -> Let variable; (a:as) -> Let fun
-  deriving (Show, Functor)
+    deriving (Show, Functor)
 
 
 -- | AST de Tipos Superficiales
@@ -49,7 +49,7 @@ data STy =
 data Ty =
       NatTy (Maybe Name)
     | FunTy (Maybe Name) Ty Ty
-    deriving (Show)
+      deriving (Show)
 
 instance Eq Ty where
   NatTy _ == NatTy _ = True
@@ -83,7 +83,7 @@ data SDecl =
     sdeclName   :: Name,
     sdeclBodyTy :: STy
   } 
-    deriving (Show)
+    deriving Show
 
 -- | tipo de datos de declaraciones, parametrizado por el tipo del cuerpo de la declaración
 data Decl a = 

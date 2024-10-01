@@ -20,4 +20,4 @@ data Error =
 
 instance Show Error where
   show (ParseErr e) = show e
-  show (ErrPos p s) = show p++" "++ s
+  show (ErrPos p s) = show p ++" "++ s

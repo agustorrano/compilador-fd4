@@ -19,17 +19,16 @@ type Column = Int
 data Pos = NoPos             -- ^ No hay info de posición
          | Pos !Line !Column -- ^ Posición en un archivo.
 
+instance Show Pos where
+   show (Pos line column) = "("++show line++","++show column++")"
+   show NoPos = ""
+
 instance Semigroup Pos where
   i <> NoPos = i
   _ <> i     = i
 
 instance Monoid Pos where
   mempty = NoPos
-
-instance Show Pos where
-   show (Pos line column) = "("++show line++","++show column++")"
-   show NoPos = ""
-
 ---------------------
 -- Utility functions
 --------------------
