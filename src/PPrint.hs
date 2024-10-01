@@ -15,7 +15,7 @@ module PPrint (
     pp,
     ppTy,
     ppName,
-    ppDeclTerm,
+    ppTermDecl,
     ppDeclTy
     ) where
 
@@ -254,8 +254,8 @@ render :: Doc AnsiStyle -> String
 render = unpack . renderStrict . layoutSmart defaultLayoutOptions
 
 -- | Pretty printing de declaraciones
-ppDeclTerm :: MonadFD4 m => Decl TTerm -> m String
-ppDeclTerm (Decl p x t) = do 
+ppTermDecl :: MonadFD4 m => Decl TTerm -> m String
+ppTermDecl (Decl p x t) = do 
   gdecl <- gets glbTerm
   return (render $ sep [defColor (pretty "let")
                        , name2doc x 

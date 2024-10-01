@@ -11,7 +11,7 @@ Este módulo permite elaborar términos y declaraciones para convertirlas desde
 fully named (@STerm) a locally closed (@Term@)
 -}
 
-module Elab (elab, elabDeclTy, elabDeclTerm) where
+module Elab (elab, elabTyDecl, elabTermDecl) where
 
 import Lang
 import Subst
@@ -154,39 +154,39 @@ elab' env (SLet p True v xs vty def body) =
     vty'' <- elabTy vty'
     return $ Let p v vty'' t1 (close v t2)
 
-elabDeclTerm :: MonadFD4 m => SDecl ->  m (Ty ,Decl Term)
-elabDeclTerm (SDecl p b (v,vty) [] dec) = 
+elabTermDecl :: MonadFD4 m => SDecl ->  m (Ty ,Decl Term)
+elabTermDecl (SDecl p b (v,vty) [] dec) = 
   if b
   then failPosFD4 p "Let Recursivo sin argumentos"
   else do
     t <- elab dec
     vty' <- elabTy vty
     return (vty', Decl p v t) 
-elabDeclTerm (SDecl p False (v,vty) xs dec) =
+elabTermDecl (SDecl p False (v,vty) xs dec) =
   do
     let vty' = getType xs vty 
     t <- elab (SLam p xs dec) 
     vty'' <- elabTy vty'
     return (vty'', Decl p v t)
-elabDeclTerm (SDecl p True l1@(v,vty) xs dec) =
+elabTermDecl (SDecl p True l1@(v,vty) xs dec) =
   do
     let vty' = getType xs vty 
     t1 <- elab (SFix p (v, vty') xs dec)
     vty'' <- elabTy vty'
     return (vty'', Decl p v t1)
 
-elabDeclTy :: MonadFD4 m => SDecl -> m (Decl Ty)
-elabDeclTy (SDeclTy p n SNatTy) =
+elabTyDecl :: MonadFD4 m => SDecl -> m (Decl Ty)
+elabTyDecl (SDeclTy p n SNatTy) =
   do
     let ty = NatTy (Just n)
     return $ Decl p n ty 
-elabDeclTy (SDeclTy p n (SFunTy sty sty')) =
+elabTyDecl (SDeclTy p n (SFunTy sty sty')) =
   do 
     ty <- elabTy sty
     ty' <- elabTy sty'
     let fty = FunTy (Just n) ty ty'
     return $ Decl p n fty
-elabDeclTy (SDeclTy p n (SNameTy n')) =
+elabTyDecl (SDeclTy p n (SNameTy n')) =
   do
     ty <- lookupTyDecl n'
     let ty' = change n (fromJust ty)

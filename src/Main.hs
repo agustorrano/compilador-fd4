@@ -30,9 +30,9 @@ import Errors
 import Lang
 import CEK 
 import Parse ( P, tm, program, declOrTm, runP )
-import Elab ( elab, elabDeclTerm, elabDeclTy )
+import Elab ( elab, elabTermDecl, elabTyDecl )
 import Eval ( eval )
-import PPrint ( pp , ppTy, ppDeclTerm)
+import PPrint ( pp , ppTy, ppTermDecl)
 import MonadFD4
     ( when,
       MonadError(throwError),
@@ -158,7 +158,7 @@ handleDecl d@SDecl {..} =
           printFD4 ("Chequeando tipos de "++f)
           td <- typecheckDecl d
           addTermDecl td
-          ppterm <- ppDeclTerm td
+          ppterm <- ppTermDecl td
           printFD4 ppterm
       Eval -> do
           td <- typecheckDecl d
@@ -173,11 +173,11 @@ handleDecl d@SDecl {..} =
     typecheckDecl :: MonadFD4 m => SDecl -> m (Decl TTerm)
     typecheckDecl ss =
       do
-        (ty,t') <- elabDeclTerm ss
+        (ty,t') <- elabTermDecl ss
         tcDecl ty t'
 handleDecl d@SDeclTy {..} =
   do
-    d' <- elabDeclTy d
+    d' <- elabTyDecl d
     addTyDecl d'
 
 
