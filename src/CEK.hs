@@ -69,9 +69,6 @@ destroy _ (KIfz e _ t1:k) = seek t1 e k
 evalCEK :: MonadFD4 m => TTerm -> m Val
 evalCEK tt = seek tt [] []
 
-trash :: (Pos, Ty)
-trash = (NoPos,NatTy Nothing)
-
 fvInstance :: [Tm info Var] -> Tm info Var -> Tm info Var
 fvInstance e = varChanger (\_ p n -> V p (Free n)) bnd
   where lim = length e 
@@ -79,14 +76,16 @@ fvInstance e = varChanger (\_ p n -> V p (Free n)) bnd
                   | otherwise = V p $ Bound (i - lim) 
 
 transform :: MonadFD4 m => Val -> m TTerm
-transform (VNat c) = do return  (Const trash c) 
+transform (VNat c) = do return  (Const (NoPos, NatTy Nothing) c) 
 transform (VClos (VClosfun e x ty t)) = 
   do
     ts <- mapM transform e
     let t' = fvInstance ts t 
-    return (Lam trash x ty (Sc1 t'))
+    let info = (NoPos, FunTy Nothing ty (getTy t'))
+    return (Lam info x ty (Sc1 t'))
 transform (VClos (VClosfix e f ty1 x ty2 t)) = 
   do
     ts <- mapM transform e
     let t' = fvInstance ts t 
-    return (Fix trash f ty1 x ty2 (Sc2 t'))
+    let info = (NoPos, ty1)
+    return (Fix info f ty1 x ty2 (Sc2 t'))
