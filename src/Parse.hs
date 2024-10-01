@@ -10,7 +10,7 @@ Stability   : experimental
 
 -}
 
-module Parse (tm, Parse.parse, decl, runP, P, program, declOrTm) where
+module Parse (tm, Parse.parse, declTerm, runP, P, program, declOrTm) where
 
 import Prelude hiding ( const )
 import Lang hiding (getPos)
@@ -81,17 +81,23 @@ getPos :: P Pos
 getPos = do pos <- getPosition
             return $ Pos (sourceLine pos) (sourceColumn pos)
 
-tyatom :: P Ty
-tyatom = (reserved "Nat" >> return NatTy)
+tyatom :: P STy
+tyatom = (reserved "Nat" >> return SNatTy)
          <|> parens typeP
 
-typeP :: P Ty
+typedef :: P STy
+typedef = do
+  s <- tyIdentifier
+  return $ SNameTy s
+
+typeP :: P STy
 typeP = try (do
-          x <- tyatom
+          x <- ty
           reservedOp "->"
           y <- typeP
-          return (FunTy x y))
-      <|> tyatom
+          return (SFunTy x y))
+      <|> ty
+  where ty = tyatom <|> typedef
 
 const :: P Const
 const = CNat <$> num
@@ -109,7 +115,7 @@ printEthaOp = do
   i <- getPos
   reserved "print"
   str <- option "" stringLiteral
-  return (SLam i [(["x"],NatTy)] (SPrint i str (SV i "x")))
+  return (SLam i [(["x"],SNatTy)] (SPrint i str (SV i "x")))
 
 binary :: String -> BinaryOp -> Assoc -> Operator String () Identity STerm
 binary s f = Ex.Infix (reservedOp s >> return (SBinaryOp NoPos f))
@@ -128,7 +134,7 @@ atom =     (flip SConst <$> const <*> getPos)
        <|> (try printOp <|> printEthaOp)
 
 -- parsea un par (variable : tipo)
-binding :: P (Name, Ty)
+binding :: P (Name, STy)
 binding = do
   v <- var
   reservedOp ":"
@@ -136,7 +142,7 @@ binding = do
   return (v, ty)
 
 -- parsea una lista de pares ([variables] : tipo), encerrados por paréntesis
-bindings :: P [([Name], Ty)]
+bindings :: P [([Name], STy)]
 bindings = do
   xs <- parens multibindings
   try
@@ -146,7 +152,7 @@ bindings = do
     <|>
     return [xs]
 
-multibindings :: P ([Name], Ty)
+multibindings :: P ([Name], STy)
 multibindings = do
   xs <- many var
   reservedOp ":"
@@ -191,17 +197,17 @@ fix = do
   t <- expr
   return (SFix i (f,fty) xs t)
 
-let0 :: P ((Name, Ty), [([Name], Ty)])
+let0 :: P ((Name, STy), [([Name], STy)])
 let0 = do
   p <- parens binding
   return (p, [])
 
-let1 :: P ((Name,Ty), [([Name],Ty)])
+let1 :: P ((Name,STy), [([Name],STy)])
 let1 = try (do
   t <- binding
   return (t, []))
 
-let2 :: P ((Name,Ty), [([Name],Ty)])
+let2 :: P ((Name,STy), [([Name],STy)])
 let2 = do
   v <- var
   xs <- bindings
@@ -240,8 +246,8 @@ letexp = do
 tm :: P STerm
 tm = app <|> lam <|> ifz <|> (try printOp <|> printEthaOp) <|> fix <|> letexp
 
-decl:: P (SDecl STerm)
-decl = do
+declTerm:: P (SDecl STerm)
+declTerm = do
   reserved "let"
   i <- getPos
   b <- letbool
@@ -250,14 +256,23 @@ decl = do
   t <- expr
   return (SDecl i b p xs t)
 
+declPTy :: P (SDecl STerm)
+declPTy = do 
+  reserved "type"
+  i <- getPos
+  n <- tyIdentifier
+  reservedOp "="
+  ty <- typeP
+  return (SDeclTy i n ty)
+
 -- | Parser de programas (listas de declaraciones) 
 program :: P [SDecl STerm]
-program = many decl
+program = many (declTerm <|> declPTy)
 
 -- | Parsea una declaración a un término
 -- Útil para las sesiones interactivas
 declOrTm :: P (Either (SDecl STerm) STerm)
-declOrTm =  try (Right <$> expr) <|> (Left <$> decl)
+declOrTm =  try (Right <$> expr) <|> (Left <$> (declTerm <|> declPTy))
 
 -- Corre un parser, chequeando que se pueda consumir toda la entrada
 runP :: P a -> String -> String -> Either ParseError a

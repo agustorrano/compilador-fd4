@@ -37,15 +37,25 @@ data STm info ty var =
   | SLet info Bool var [([var], ty)] ty (STm info ty var) (STm info ty var) -- Bool -> Rec or Not Rec; [] -> Let variable; (a:as) -> Let fun
   deriving (Show, Functor)
 
+
+-- | AST de Tipos Superficiales
+data STy =
+      SNatTy
+    | SFunTy STy STy
+    | SNameTy Name deriving (Show, Eq)
+
+
 -- | AST de Tipos
 data Ty =
-      NatTy
-    | FunTy Ty Ty
+      NatTy (Maybe Name)
+    | FunTy (Maybe Name) Ty Ty
     deriving (Show,Eq)
 
 type Name = String
 
-type STerm = STm Pos Ty Name -- ^ 'STm' tiene 'Name's como variables ligadas y libres y globales, guarda posición  
+type TyName = ()
+
+type STerm = STm Pos STy Name -- ^ 'STm' tiene 'Name's como variables ligadas y libres y globales, guarda posición  
 
 newtype Const = CNat Int
   deriving Show
@@ -59,11 +69,15 @@ data SDecl a = SDecl
   {
     sdeclPos :: Pos,
     sdeclRec :: Bool,
-    sdeclVarTy :: (Name, Ty),
-    sdeclList :: [([Name], Ty)],
+    sdeclVarTy :: (Name, STy),
+    sdeclList :: [([Name], STy)],
     sdeclBody :: a
-  }
-  deriving (Show, Functor)
+  } 
+  | SDeclTy
+  { sdeclPosTy :: Pos,
+    sdeclName :: Name,
+    sdeclBodyTy :: STy
+  } deriving (Show, Functor)
 -- | tipo de datos de declaraciones, parametrizado por el tipo del cuerpo de la declaración
 data Decl a = Decl
   { declPos  :: Pos
@@ -162,21 +176,21 @@ freeVars tm = nubSort $ go tm [] where
 
 -- Obtenemos el tipo de la función a partir de la lista de variables,
 -- devolviendo una función para despues completar con el tipo de retorno.
-getType :: [([Name],Ty)] -> (Ty -> Ty)
+getType :: [([Name],STy)] -> (STy -> STy)
 getType [] = id
 getType (([x],ty):ls) =
   let g = getType ls
-  in FunTy ty . g
+  in SFunTy ty . g
 getType ((x:xs,ty):ls) =
   let g = getType ((xs,ty):ls)
-  in FunTy ty . g
+  in SFunTy ty . g
 
 -- Obetemos el tipo de retorno, desarmando el tipo de la función por cada una
 -- de las variables que toma com argumento.
-unType :: Ty -> [([Name],Ty)] -> Ty
+unType :: STy -> [([Name],STy)] -> STy
 unType ty [] = ty 
-unType (FunTy _ ty) (([x],ty'):xs) = unType ty xs
-unType (FunTy _ ty) ((x:xs',ty'):xs) = unType ty ((xs',ty'):xs)
+unType (SFunTy _ ty) (([x],ty'):xs) = unType ty xs
+unType (SFunTy _ ty) ((x:xs',ty'):xs) = unType ty ((xs',ty'):xs)
 
 -- Convertimos a términos azucarados, ya que openAll nos da la representación
 -- sin azucar de STerm. 

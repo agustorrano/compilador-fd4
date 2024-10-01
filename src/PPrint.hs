@@ -36,7 +36,7 @@ import Prettyprinter
       Doc,
       Pretty(pretty) )
 import MonadFD4 ( gets, MonadFD4 )
-import Global ( GlEnv(glb) )
+import Global ( GlEnv(glbTerm,glbTy) )
 
 freshen :: [Name] -> Name -> Name
 freshen ns n = let cands = n : map (\i -> n ++ show i) [0..] 
@@ -228,7 +228,7 @@ pp :: MonadFD4 m => TTerm -> m String
 -- Uncomment to use the Show instance for Term
 {- pp = show -}
 pp t = do
-       gdecl <- gets glb
+       gdecl <- gets glbTerm
        return (render . t2doc False $ resugaring $ openAll fst (map declName gdecl) t)
 
 render :: Doc AnsiStyle -> String

@@ -19,8 +19,9 @@ y la mónada 'FD4' que provee una instancia de esta clase.
 module MonadFD4 (
   FD4,
   runFD4,
-  lookupDecl,
-  lookupTy,
+  lookupTermDecl,
+  lookupTyDecl,
+  lookupTermTy,
   printFD4,
   setLastFile,
   getLastFile,
@@ -31,7 +32,8 @@ module MonadFD4 (
   eraseLastFileDecls,
   failPosFD4,
   failFD4,
-  addDecl,
+  addTermDecl,
+  addTyDecl,
   catchErrors,
   MonadFD4,
   module Control.Monad.Except,
@@ -82,34 +84,47 @@ printFD4 :: MonadFD4 m => String -> m ()
 printFD4 = liftIO . putStrLn
 
 setLastFile :: MonadFD4 m => FilePath -> m ()
-setLastFile filename = modify (\s -> s {lfile = filename , cantDecl = 0})
+setLastFile filename = modify (\s -> s {lfile = filename , cantTermDecl = 0, cantTyDecl = 0})
 
 getLastFile :: MonadFD4 m => m FilePath
 getLastFile = gets lfile
 
-addDecl :: MonadFD4 m => Decl TTerm -> m ()
-addDecl d = modify (\s -> s { glb = d : glb s, cantDecl = cantDecl s + 1 })
+addTermDecl :: MonadFD4 m => Decl TTerm -> m ()
+addTermDecl d = modify (\s -> s { glbTerm = d : glbTerm s, cantTermDecl = cantTermDecl s + 1 })
+
+addTyDecl :: MonadFD4 m => Decl Ty -> m ()
+addTyDecl d = modify (\s -> s { glbTy = d : glbTy s, cantTyDecl = cantTyDecl s + 1 })
 
 eraseLastFileDecls :: MonadFD4 m => m ()
 eraseLastFileDecls = do
       s <- get
-      let n = cantDecl s
-          (_,rem) = splitAt n (glb s)
-      modify (\s -> s {glb = rem, cantDecl = 0})
+      let (n,m) = (cantTermDecl s, cantTyDecl s)
+          (_,rem) = splitAt n (glbTerm s)
+          (_,rem') = splitAt m (glbTy s)
+      modify (\s -> s {glbTerm = rem, glbTy = rem', cantTermDecl = 0, cantTyDecl = 0})
 
-lookupDecl :: MonadFD4 m => Name -> m (Maybe TTerm)
-lookupDecl nm = do
+hasName :: Name -> Decl a -> Bool
+hasName nm (Decl { declName = nm' }) = nm == nm'
+
+lookupTermDecl :: MonadFD4 m => Name -> m (Maybe TTerm)
+lookupTermDecl nm = do
      s <- get
-     case filter (hasName nm) (glb s) of
+     case filter (hasName nm) (glbTerm s) of
        (Decl { declBody=e }):_ -> return (Just e)
        [] -> return Nothing
-   where hasName :: Name -> Decl a -> Bool
-         hasName nm (Decl { declName = nm' }) = nm == nm'
 
-lookupTy :: MonadFD4 m => Name -> m (Maybe Ty)
-lookupTy nm = do
+lookupTyDecl :: MonadFD4 m => Name -> m (Maybe Ty)
+lookupTyDecl nm = do
+    s <- get
+    case filter (hasName nm) (glbTy s) of
+        (Decl { declTy = ty}):_ -> return (Just ty)
+        [] -> return Nothing
+
+
+lookupTermTy :: MonadFD4 m => Name -> m (Maybe Ty)
+lookupTermTy nm = do
       s <- get
-      return $ lookup nm (tyEnv s)
+      return $ lookup nm (tyTermEnv s)
 
 failPosFD4 :: MonadFD4 m => Pos -> String -> m a
 failPosFD4 p s = throwError (ErrPos p s)
