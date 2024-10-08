@@ -1,0 +1,12 @@
+<(\x. (let y = 1 in 2) + x) 0 | - | - >
+
+C((\x. (let y = 1 in 2) + x) 0)
+= C((\x. (let y = 1 in 2) + x));C(0);CALL
+= FUNCTION(C((let y = 1 in 2) + x); RETURN);C(0);CALL
+= FUNCTION(C(let y = 1 in 2);C(x);ADD;RETURN);C(0);CALL
+= FUNCTION(CONST 1;SHIFT;CONST 2;DROP;ACCES 0;ADD;RETURN);
+  CONST 0;CALL
+
+
+
+
