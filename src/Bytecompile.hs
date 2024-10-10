@@ -100,7 +100,21 @@ showBC :: Bytecode -> String
 showBC = intercalate "; " . showOps
 
 bcc :: MonadFD4 m => TTerm -> m Bytecode
-bcc t = failFD4 "implementame!"
+bcc tt = bcc' tt []
+
+bcc' :: MonadFD4 m => TTerm -> Bytecode -> m Bytecode
+bcc' (V i x) b = undefined
+bcc' (Const i (CNat n)) b = return (CONST:n:b)
+bcc' (Lam i n ty (Sc1 t)) b = undefined
+bcc' (App i t t') b = do
+  be <- bcc' t' (CALL:b)
+  bcc' t be 
+bcc' (Print i str t) b = undefined
+
+bcc' (BinaryOp i op t t') b = undefined
+bcc' (Fix i f fty x ty (Sc2 t)) b = undefined
+bcc' (IfZ i t1 t2 t3) b = undefined
+bcc' (Let i x ty t (Sc1 t')) b = undefined
 
 -- ord/chr devuelven los codepoints unicode, o en otras palabras
 -- la codificación UTF-32 del caracter.
