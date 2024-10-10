@@ -26,6 +26,7 @@ import Data.Binary.Get ( getWord32le, isEmpty )
 
 import Data.List (intercalate)
 import Data.Char
+import Data.Maybe (fromJust)
 
 type Opcode = Int
 type Bytecode = [Int]
@@ -73,6 +74,7 @@ pattern DROP     = 12
 pattern PRINT    = 13
 pattern PRINTN   = 14
 pattern JUMP     = 15
+pattern IFZ     = 16
 
 --función util para debugging: muestra el Bytecode de forma más legible.
 showOps :: Bytecode -> [String]
@@ -103,18 +105,42 @@ bcc :: MonadFD4 m => TTerm -> m Bytecode
 bcc tt = bcc' tt []
 
 bcc' :: MonadFD4 m => TTerm -> Bytecode -> m Bytecode
-bcc' (V i x) b = undefined
+bcc' (V i (Bound n)) b = return (ACCESS:n:b)
+bcc' (V i (Free name)) b = do failFD4 "Variable libre encontrada bcc"
+bcc' (V i (Global name)) b = do
+  mt <- lookupTermDecl name
+  bcc' (fromJust mt) b
 bcc' (Const i (CNat n)) b = return (CONST:n:b)
-bcc' (Lam i n ty (Sc1 t)) b = undefined
+bcc' (Lam i n ty (Sc1 t)) b = do
+  bco <- bcc t
+  let l = length bco
+  return $ (FUNCTION:l:bco) ++ (RETURN:b)
 bcc' (App i t t') b = do
   be <- bcc' t' (CALL:b)
   bcc' t be 
-bcc' (Print i str t) b = undefined
-
-bcc' (BinaryOp i op t t') b = undefined
-bcc' (Fix i f fty x ty (Sc2 t)) b = undefined
-bcc' (IfZ i t1 t2 t3) b = undefined
-bcc' (Let i x ty t (Sc1 t')) b = undefined
+bcc' (Print i str t) b = do
+  let strc = string2bc str
+  let b' = (PRINT:strc) ++ (NULL:PRINTN:b) 
+  bcc' t b' 
+bcc' (BinaryOp i op t t') b = do
+  let opc = aux op
+  b' <- bcc' t' (opc:b)
+  bcc' t b'
+  where aux Add = ADD
+        aux Sub = SUB
+bcc' (Fix i f fty x ty (Sc2 t)) b = do
+  bco <- bcc t
+  let l = length bco
+  return $ (FUNCTION:l:bco) ++ (RETURN:FIX:b)
+bcc' (IfZ i t1 t2 t3) b = do
+  b' <- bcc' t1 (IFZ:b)
+  b'' <- bcc t3 
+  b''' <- bcc t2
+  let (l1,l2) = (length b'',length b''')
+  return $ (JUMP:l2:b''') ++ (JUMP:l1:b'') ++ b'
+bcc' (Let i x ty t (Sc1 t')) b = do
+  be <- bcc' t' (DROP:b)
+  bcc' t (SHIFT:be)
 
 -- ord/chr devuelven los codepoints unicode, o en otras palabras
 -- la codificación UTF-32 del caracter.
