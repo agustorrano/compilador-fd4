@@ -21,6 +21,7 @@ import Data.Char ( isSpace )
 import Control.Exception ( catch , IOException )
 import System.IO ( hPrint, stderr, hPutStrLn )
 import Data.Maybe ( fromMaybe )
+-- import Data.ByteString
 
 import System.Exit ( exitWith, ExitCode(ExitFailure) )
 import Options.Applicative
@@ -29,6 +30,7 @@ import Global
 import Errors
 import Lang
 import CEK 
+import Bytecompile
 import Parse ( P, tm, program, declOrTm, runP )
 import Elab ( elab, elabTermDecl, elabTyDecl )
 import Eval ( eval )
@@ -42,6 +44,7 @@ import MonadFD4
       catchErrors,
       eraseLastFileDecls,
       getInter,
+      getModule,
       getLastFile,
       getMode,
       lookupTermDecl,
@@ -66,6 +69,8 @@ parseMode = (,) <$>
       <|> flag Interactive Interactive ( long "interactive" <> short 'i' <> help "Ejecutar en forma interactiva")
       <|> flag Eval        Eval        (long "eval" <> short 'e' <> help "Evaluar programa")
       <|> flag CEK CEK (long "cek" <> short 'k' <> help "Evaluar programa con máquina abstracta CEK")
+      <|> flag Bytecompile Bytecompile (long "bytecompile" <> short 'm' <> help "Compilar a la Macchina")
+      <|> flag RunVM RunVM (long "runVM" <> short 'r' <> help "Ejecutar bytecode en la Macchina")
       )
    <*> pure False
 
@@ -82,9 +87,13 @@ main = execParser opts >>= go
      <> header "Compilador de FD4 de la materia Compiladores 2022" )
 
     go :: (Mode,Bool,[FilePath]) -> IO ()
-    go (Interactive,opt,files) =
+    go (Interactive, opt, files) =
               runOrFail (Conf opt Interactive) (runInputT defaultSettings (repl files))
-    go (m,opt, files) =
+    go (Bytecompile, opt, files) =
+              runOrFail (Conf opt Bytecompile) $ mapM_ compileFileBC files
+    go (RunVM, opt, files) =
+              runOrFail (Conf opt RunVM) $ mapM_ compileFileRVM files
+    go (m, opt, files) =
               runOrFail (Conf opt m) $ mapM_ compileFile files
 
 runOrFail :: Conf -> FD4 a -> IO a
@@ -134,6 +143,21 @@ compileFile f = do
     mapM_ handleDecl decls
     setInter i
 
+compileFileBC ::  MonadFD4 m => FilePath -> m ()
+compileFileBC f = do
+    i <- getInter
+    setInter False
+    when i $ printFD4 ("Abriendo "++f++"...")
+    decls <- loadFile f
+    mapM_ handleDecl decls
+    setInter i
+    gt <- getModule
+    bc <- bytecompileModule gt
+
+
+compileFileRVM ::  MonadFD4 m => FilePath -> m ()
+compileFileRVM f = undefined
+
 parseIO ::  MonadFD4 m => String -> P a -> String -> m a
 parseIO filename p x = case runP p x filename of
                   Left e  -> throwError (ParseErr e)
@@ -150,25 +174,30 @@ handleDecl d@SDecl {..} =
     m <- getMode
     case m of
       Interactive -> do
-          (Decl p x tt) <- typecheckDecl d
-          te <- eval tt
-          addTermDecl (Decl p x te)
+        (Decl p x tt) <- typecheckDecl d
+        te <- eval tt
+        addTermDecl (Decl p x te)
       Typecheck -> do
-          f <- getLastFile
-          printFD4 ("Chequeando tipos de "++f)
-          td <- typecheckDecl d
-          addTermDecl td
-          ppterm <- ppTermDecl td
-          printFD4 ppterm
+        f <- getLastFile
+        printFD4 ("Chequeando tipos de "++f)
+        td <- typecheckDecl d
+        addTermDecl td
+        ppterm <- ppTermDecl td
+        printFD4 ppterm
       Eval -> do
-          td <- typecheckDecl d
-          ed <- evalDecl td
-          addTermDecl ed
+        td <- typecheckDecl d
+        ed <- evalDecl td
+        addTermDecl ed
       CEK -> do
-          (Decl p x tt) <- typecheckDecl d
-          val <- evalCEK tt
-          te <- transform val
-          addTermDecl (Decl p x te) 
+        (Decl p x tt) <- typecheckDecl d
+        val <- evalCEK tt
+        te <- transform val
+        addTermDecl (Decl p x te)
+      Bytecompile -> do
+        dt <- typecheckDecl d
+        addTermDecl dt
+      RunVM -> undefined
+
   where
     typecheckDecl :: MonadFD4 m => SDecl -> m (Decl TTerm)
     typecheckDecl ss =

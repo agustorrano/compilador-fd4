@@ -27,6 +27,7 @@ module MonadFD4 (
   getLastFile,
   setInter,
   getInter,
+  getModule,
   getMode,
   getOpt,
   eraseLastFileDecls,
@@ -40,7 +41,7 @@ module MonadFD4 (
   module Control.Monad.State)
  where
 
-import Common
+import Common ( Pos(NoPos) )
 import Lang
 import Global
 import Errors ( Error(..) )
@@ -79,6 +80,9 @@ setInter b = modify (\s-> s {inter = b})
 
 getInter :: MonadFD4 m => m Bool
 getInter = gets inter
+
+getModule :: MonadFD4 m => m [Decl TTerm]
+getModule = gets glbTerm
 
 printFD4 :: MonadFD4 m => String -> m ()
 printFD4 = liftIO . putStrLn

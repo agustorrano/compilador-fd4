@@ -1,5 +1,6 @@
 {-# LANGUAGE PatternSynonyms #-}
 {-# LANGUAGE RecordWildCards #-}
+{-# OPTIONS_GHC -Wno-incomplete-patterns #-}
 {-|
 Module      : Bytecompile
 Description : Compila a bytecode. Ejecuta bytecode.
@@ -18,6 +19,7 @@ module Bytecompile
 import Lang
 import Subst
 import MonadFD4
+import Eval
 
 import qualified Data.ByteString.Lazy as BS
 import Data.Binary ( Word32, Binary(put, get), decode, encode )
@@ -32,6 +34,10 @@ type Opcode = Int
 type Bytecode = [Int]
 
 newtype Bytecode32 = BC { un32 :: [Word32] }
+
+data Val = I Int | Fun Env Bytecode | RA Env Bytecode
+type Env = [Val]
+type Stack = [Val]
 
 {- Esta instancia explica como codificar y decodificar Bytecode de 32 bits -}
 instance Binary Bytecode32 where
@@ -137,7 +143,7 @@ bcc' (IfZ i t1 t2 t3) b = do
   b'' <- bcc t3 
   b''' <- bcc t2
   let (l1,l2) = (length b'',length b''')
-  return $ (JUMP:l2:b''') ++ (JUMP:l1:b'') ++ b'
+  return $ (JUMP:l1:b'') ++ (JUMP:l2:b''') ++ b'
 bcc' (Let i x ty t (Sc1 t')) b = do
   be <- bcc' t' (DROP:b)
   bcc' t (SHIFT:be)
@@ -151,7 +157,24 @@ bc2string :: Bytecode -> String
 bc2string = map chr
 
 bytecompileModule :: MonadFD4 m => Module -> m Bytecode
-bytecompileModule m = failFD4 "implementame!"
+bytecompileModule m = bcc' (moduleTTerm m) [STOP]
+
+global2free :: TTerm -> TTerm
+global2free (V i (Global n)) = V i (Free n)
+global2free (V p v) = V p v
+global2free (Lam p y ty (Sc1 t)) = Lam p y ty (Sc1 (global2free t))
+global2free (App p l r) = App p (global2free l) (global2free r)
+global2free (Fix p f fty x xty (Sc2 t)) = Fix p f fty x xty (Sc2 (global2free t))
+global2free (IfZ p c t e) = IfZ p (global2free c) (global2free t) (global2free e)
+global2free t@(Const _ _) = t
+global2free (Print p str t) = Print p str (global2free t)
+global2free (BinaryOp p op t u) = BinaryOp p op (global2free t) (global2free u)
+global2free (Let p v vty m (Sc1 o)) = Let p v vty (global2free m) (Sc1 (global2free o))
+
+moduleTTerm :: Module -> TTerm
+moduleTTerm [Decl _ _ b] = global2free b
+moduleTTerm ((Decl p n b):xs) = 
+  Let (p, getTy b) n (getTy b) (global2free b) (close n (moduleTTerm xs))
 
 -- | Toma un bytecode, lo codifica y lo escribe un archivo
 bcWrite :: Bytecode -> FilePath -> IO ()
@@ -166,4 +189,36 @@ bcRead :: FilePath -> IO Bytecode
 bcRead filename = (map fromIntegral <$> un32) . decode <$> BS.readFile filename
 
 runBC :: MonadFD4 m => Bytecode -> m ()
-runBC bc = failFD4 "implementame!"
+runBC bc = runBC' bc [] []
+
+runBC' :: MonadFD4 m => Bytecode -> Env -> Stack -> m ()
+runBC' (ACCESS:n:c) e s = runBC' c e (e !! n:s)
+runBC' (CONST:n:c) e s = runBC' c e (I n:s)
+runBC' (ADD:c) e ((I n):(I m):s) = runBC' c e (I (semOp Add n m):s)
+runBC' (SUB:c) e ((I n):(I m):s) = runBC' c e (I (semOp Sub n m):s)
+runBC' (CALL:c) e (v:(Fun ef cf):s) = runBC' cf (v:ef) (RA e c:s)
+runBC' (FUNCTION:l:c) e s =
+  let (cf, cr) = splitAt l c
+  in runBC' cr e (Fun e cf:s)
+runBC' (RETURN:FIX:c) e (Fun _ cf:s) = do
+  let efix = Fun efix cf : e
+  runBC' c e (Fun efix cf:s)
+runBC' (RETURN:_) _ (v:RA e c:s) = runBC' c e (v:s)
+runBC' (SHIFT:c) e (v:s) = runBC' c (v:e) s
+runBC' (DROP:c) (v:e) s = runBC' c e s
+runBC' (PRINTN:c) e (I n:s) = do
+  printFD4 $ show n
+  runBC' c e (I n:s)
+runBC' (PRINT:c) e s = do
+  let (bs, c') = aux [] c
+  printFD4 $ bc2string bs
+  runBC' c' e s
+  where aux l (NULL:cont) = (reverse l,cont)
+        aux l (str:cont) = aux (str:l) cont
+runBC' (JUMP:l:c) e s =
+  let (cf, cr) = splitAt l c
+  in runBC' cr e (RA e cf:s)
+runBC' (IFZ:_) _ (I 0:RA e1 c1:_:s) =
+  runBC' c1 e1 s
+runBC' (IFZ:_) _ (I _:_:RA e2 c2:s) =
+  runBC' c2 e2 s
