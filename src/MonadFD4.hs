@@ -23,6 +23,7 @@ module MonadFD4 (
   lookupTyDecl,
   lookupTermTy,
   printFD4,
+  printNoLnFD4,
   setLastFile,
   getLastFile,
   setInter,
@@ -86,6 +87,9 @@ getModule = gets glbTerm
 
 printFD4 :: MonadFD4 m => String -> m ()
 printFD4 = liftIO . putStrLn
+
+printNoLnFD4 :: MonadFD4 m => String -> m ()
+printNoLnFD4 = liftIO . putStr
 
 setLastFile :: MonadFD4 m => FilePath -> m ()
 setLastFile filename = modify (\s -> s {lfile = filename , cantTermDecl = 0, cantTyDecl = 0})

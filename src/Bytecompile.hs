@@ -18,7 +18,7 @@ module Bytecompile
 
 import Lang
 import Subst
-import MonadFD4
+import MonadFD4 ( failFD4, printFD4, printNoLnFD4, MonadFD4 )
 import Eval
 
 import qualified Data.ByteString.Lazy as BS
@@ -28,7 +28,6 @@ import Data.Binary.Get ( getWord32le, isEmpty )
 
 import Data.List (intercalate)
 import Data.Char
-import Data.Maybe (fromJust)
 
 type Opcode = Int
 type Bytecode = [Int]
@@ -98,6 +97,7 @@ showOps (STOP:xs)        = "STOP" : showOps xs
 showOps (JUMP:i:xs)      = ("JUMP off=" ++ show i) : showOps xs
 showOps (SHIFT:xs)       = "SHIFT" : showOps xs
 showOps (DROP:xs)        = "DROP" : showOps xs
+showOps (IFZ:xs)         = "IFZ" : showOps xs
 showOps (PRINT:xs)       = let (msg,_:rest) = span (/=NULL) xs
                            in ("PRINT " ++ show (bc2string msg)) : showOps rest
 showOps (PRINTN:xs)      = "PRINTN" : showOps xs
@@ -113,14 +113,12 @@ bcc tt = bcc' tt []
 bcc' :: MonadFD4 m => TTerm -> Bytecode -> m Bytecode
 bcc' (V i (Bound n)) b = return (ACCESS:n:b)
 bcc' (V i (Free name)) b = do failFD4 "Variable libre encontrada bcc"
-bcc' (V i (Global name)) b = do
-  mt <- lookupTermDecl name
-  bcc' (fromJust mt) b
+bcc' (V i (Global name)) b = failFD4 "Variable global encontrada"
 bcc' (Const i (CNat n)) b = return (CONST:n:b)
 bcc' (Lam i n ty (Sc1 t)) b = do
   bco <- bcc t
   let l = length bco
-  return $ (FUNCTION:l:bco) ++ (RETURN:b)
+  return $ (FUNCTION:l + 1:bco) ++ (RETURN:b)
 bcc' (App i t t') b = do
   be <- bcc' t' (CALL:b)
   bcc' t be 
@@ -137,13 +135,12 @@ bcc' (BinaryOp i op t t') b = do
 bcc' (Fix i f fty x ty (Sc2 t)) b = do
   bco <- bcc t
   let l = length bco
-  return $ (FUNCTION:l:bco) ++ (RETURN:FIX:b)
+  return $ (FUNCTION:l+1:bco) ++ (RETURN:FIX:b)
 bcc' (IfZ i t1 t2 t3) b = do
-  b' <- bcc' t1 (IFZ:b)
-  b'' <- bcc t3 
-  b''' <- bcc t2
+  b'' <- bcc t2 
+  b''' <- bcc t3
   let (l1,l2) = (length b'',length b''')
-  return $ (JUMP:l1:b'') ++ (JUMP:l2:b''') ++ b'
+  bcc' t1 $ (IFZ:l1+2:b'') ++ (JUMP:l2:b''') ++ b
 bcc' (Let i x ty t (Sc1 t')) b = do
   be <- bcc' t' (DROP:b)
   bcc' t (SHIFT:be)
@@ -157,7 +154,7 @@ bc2string :: Bytecode -> String
 bc2string = map chr
 
 bytecompileModule :: MonadFD4 m => Module -> m Bytecode
-bytecompileModule m = bcc' (moduleTTerm m) [STOP]
+bytecompileModule m = bcc' (moduleTTerm (reverse m)) [STOP]
 
 global2free :: TTerm -> TTerm
 global2free (V i (Global n)) = V i (Free n)
@@ -192,15 +189,16 @@ runBC :: MonadFD4 m => Bytecode -> m ()
 runBC bc = runBC' bc [] []
 
 runBC' :: MonadFD4 m => Bytecode -> Env -> Stack -> m ()
+runBC' (STOP:ls) e s = do return ()
 runBC' (ACCESS:n:c) e s = runBC' c e (e !! n:s)
 runBC' (CONST:n:c) e s = runBC' c e (I n:s)
-runBC' (ADD:c) e ((I n):(I m):s) = runBC' c e (I (semOp Add n m):s)
-runBC' (SUB:c) e ((I n):(I m):s) = runBC' c e (I (semOp Sub n m):s)
+runBC' (ADD:c) e ((I n):(I m):s) = runBC' c e (I (semOp Add m n):s)
+runBC' (SUB:c) e ((I n):(I m):s) = runBC' c e (I (semOp Sub m n):s)
 runBC' (CALL:c) e (v:(Fun ef cf):s) = runBC' cf (v:ef) (RA e c:s)
 runBC' (FUNCTION:l:c) e s =
   let (cf, cr) = splitAt l c
   in runBC' cr e (Fun e cf:s)
-runBC' (RETURN:FIX:c) e (Fun _ cf:s) = do
+runBC' (FIX:c) e (Fun _ cf:s) = do
   let efix = Fun efix cf : e
   runBC' c e (Fun efix cf:s)
 runBC' (RETURN:_) _ (v:RA e c:s) = runBC' c e (v:s)
@@ -211,14 +209,16 @@ runBC' (PRINTN:c) e (I n:s) = do
   runBC' c e (I n:s)
 runBC' (PRINT:c) e s = do
   let (bs, c') = aux [] c
-  printFD4 $ bc2string bs
+  printNoLnFD4 $ bc2string bs
   runBC' c' e s
   where aux l (NULL:cont) = (reverse l,cont)
         aux l (str:cont) = aux (str:l) cont
+runBC' (IFZ:l:c) e (I 0:s) = runBC' c e s
+runBC' (IFZ:l:c) e (I _:s) =
+  let c' = drop l c
+  in runBC' c' e s
 runBC' (JUMP:l:c) e s =
-  let (cf, cr) = splitAt l c
-  in runBC' cr e (RA e cf:s)
-runBC' (IFZ:_) _ (I 0:RA e1 c1:_:s) =
-  runBC' c1 e1 s
-runBC' (IFZ:_) _ (I _:_:RA e2 c2:s) =
-  runBC' c2 e2 s
+  let c' = drop l c
+  in runBC' c' e s
+runBC' bc e s = printFD4 (showBC bc) >> failFD4 "Hasta acá llegué."
+-- -- IFZ c1 THEN c2 ELSE c3; c4

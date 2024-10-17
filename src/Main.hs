@@ -56,6 +56,7 @@ import MonadFD4
       FD4,
       MonadFD4 )
 import TypeChecker ( tc, tcDecl )
+import Common (changeExtension)
 
 prompt :: String
 prompt = "FD4> "
@@ -153,10 +154,19 @@ compileFileBC f = do
     setInter i
     gt <- getModule
     bc <- bytecompileModule gt
-
+    let bcf = changeExtension f ".bc32"
+    when i $ printFD4 ("Creando " ++ bcf ++ "...")
+    liftIO (bcWrite bc bcf)
+    
 
 compileFileRVM ::  MonadFD4 m => FilePath -> m ()
-compileFileRVM f = undefined
+compileFileRVM f = do
+    i <- getInter
+    setInter False
+    when i $ printFD4 ("Abriendo "++f++"...")
+    bc <- liftIO (bcRead f)
+    setInter i
+    runBC bc
 
 parseIO ::  MonadFD4 m => String -> P a -> String -> m a
 parseIO filename p x = case runP p x filename of
