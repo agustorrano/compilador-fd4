@@ -79,7 +79,8 @@ pattern DROP     = 12
 pattern PRINT    = 13
 pattern PRINTN   = 14
 pattern JUMP     = 15
-pattern IFZ     = 16
+pattern IFZ      = 16
+pattern TAILCALL = 17
 
 --función util para debugging: muestra el Bytecode de forma más legible.
 showOps :: Bytecode -> [String]
@@ -107,43 +108,63 @@ showOps (x:xs)           = show x : showOps xs
 showBC :: Bytecode -> String
 showBC = intercalate "; " . showOps
 
-bcc :: MonadFD4 m => TTerm -> m Bytecode
-bcc tt = bcc' tt []
+bc :: MonadFD4 m => TTerm -> m Bytecode
+bc tt = bcc tt []
 
-bcc' :: MonadFD4 m => TTerm -> Bytecode -> m Bytecode
-bcc' (V i (Bound n)) b = return (ACCESS:n:b)
-bcc' (V i (Free name)) b = do failFD4 "Variable libre encontrada bcc"
-bcc' (V i (Global name)) b = failFD4 "Variable global encontrada"
-bcc' (Const i (CNat n)) b = return (CONST:n:b)
-bcc' (Lam i n ty (Sc1 t)) b = do
-  bco <- bcc t
+bcc :: MonadFD4 m => TTerm -> Bytecode -> m Bytecode
+bcc (V i (Bound n)) b = return (ACCESS:n:b)
+bcc (V i (Free name)) b = do failFD4 "Variable libre encontrada bcc"
+bcc (V i (Global name)) b = failFD4 "Variable global encontrada"
+bcc (Const i (CNat n)) b = return (CONST:n:b)
+bcc (Lam i n ty (Sc1 t)) b = do
+  bco <- bct t []
   let l = length bco
   return $ (FUNCTION:l + 1:bco) ++ (RETURN:b)
-bcc' (App i t t') b = do
-  be <- bcc' t' (CALL:b)
-  bcc' t be 
-bcc' (Print i str t) b = do
+bcc (App i t t') b = do
+  be <- bcc t' (CALL:b)
+  bcc t be 
+bcc (Print i str t) b = do
   let strc = string2bc str
   let b' = (PRINT:strc) ++ (NULL:PRINTN:b) 
-  bcc' t b' 
-bcc' (BinaryOp i op t t') b = do
+  bcc t b' 
+bcc (BinaryOp i op t t') b = do
   let opc = aux op
-  b' <- bcc' t' (opc:b)
-  bcc' t b'
+  b' <- bcc t' (opc:b)
+  bcc t b'
   where aux Add = ADD
         aux Sub = SUB
-bcc' (Fix i f fty x ty (Sc2 t)) b = do
-  bco <- bcc t
+bcc (Fix i f fty x ty (Sc2 t)) b = do
+  bco <- bc t
   let l = length bco
   return $ (FUNCTION:l+1:bco) ++ (RETURN:FIX:b)
-bcc' (IfZ i t1 t2 t3) b = do
-  b'' <- bcc t2 
-  b''' <- bcc t3
+bcc (IfZ i t1 t2 t3) b = do
+  b'' <- bc t2 
+  b''' <- bc t3
   let (l1,l2) = (length b'',length b''')
-  bcc' t1 $ (IFZ:l1+2:b'') ++ (JUMP:l2:b''') ++ b
-bcc' (Let i x ty t (Sc1 t')) b = do
-  be <- bcc' t' (DROP:b)
-  bcc' t (SHIFT:be)
+  bcc t1 $ (IFZ:l1+2:b'') ++ (JUMP:l2:b''') ++ b
+bcc (Let i x ty t (Sc1 t')) b@[STOP] = do
+  be <- bcc t' b
+  bcc t (SHIFT:be)
+bcc (Let i x ty t (Sc1 t')) b@(RETURN:_) = do
+  be <- bcc t' b
+  bcc t (SHIFT:be)
+bcc (Let i x ty t (Sc1 t')) b = do
+  be <- bcc t' (DROP:b)
+  bcc t (SHIFT:be)
+
+bct :: MonadFD4 m => TTerm -> Bytecode -> m Bytecode
+bct (App i t t') b = do
+  be <- bcc t' (TAILCALL:b)
+  bcc t be
+bct (IfZ i t1 t2 t3) b = do
+  b'' <- bct t2 []
+  b''' <- bct t3 []
+  let l1 = length b''
+  bcc t1 $ (IFZ:l1:b'') ++ b''' ++ b
+bct (Let i x ty t (Sc1 t')) b = do
+  be <- bct t' b
+  bcc t (SHIFT:be)
+bct t b = bcc t (RETURN:b)
 
 -- ord/chr devuelven los codepoints unicode, o en otras palabras
 -- la codificación UTF-32 del caracter.
@@ -154,7 +175,7 @@ bc2string :: Bytecode -> String
 bc2string = map chr
 
 bytecompileModule :: MonadFD4 m => Module -> m Bytecode
-bytecompileModule m = bcc' (moduleTTerm (reverse m)) [STOP]
+bytecompileModule m = bcc (moduleTTerm (reverse m)) [STOP]
 
 global2free :: TTerm -> TTerm
 global2free (V i (Global n)) = V i (Free n)
@@ -186,7 +207,7 @@ bcRead :: FilePath -> IO Bytecode
 bcRead filename = (map fromIntegral <$> un32) . decode <$> BS.readFile filename
 
 runBC :: MonadFD4 m => Bytecode -> m ()
-runBC bc = runBC' bc [] []
+runBC bcode = runBC' bcode [] []
 
 runBC' :: MonadFD4 m => Bytecode -> Env -> Stack -> m ()
 runBC' (STOP:ls) e s = do return ()
@@ -195,6 +216,7 @@ runBC' (CONST:n:c) e s = runBC' c e (I n:s)
 runBC' (ADD:c) e ((I n):(I m):s) = runBC' c e (I (semOp Add m n):s)
 runBC' (SUB:c) e ((I n):(I m):s) = runBC' c e (I (semOp Sub m n):s)
 runBC' (CALL:c) e (v:(Fun ef cf):s) = runBC' cf (v:ef) (RA e c:s)
+runBC' (TAILCALL:c) e (arg:Fun eg cg:s) = runBC' cg (arg:eg) s
 runBC' (FUNCTION:l:c) e s =
   let (cf, cr) = splitAt l c
   in runBC' cr e (Fun e cf:s)
@@ -203,7 +225,7 @@ runBC' (FIX:c) e (Fun _ cf:s) = do
   runBC' c e (Fun efix cf:s)
 runBC' (RETURN:_) _ (v:RA e c:s) = runBC' c e (v:s)
 runBC' (SHIFT:c) e (v:s) = runBC' c (v:e) s
-runBC' (DROP:c) (v:e) s = runBC' c e s
+runBC' (DROP:c) (v:e) s = runBC' c e s 
 runBC' (PRINTN:c) e (I n:s) = do
   printFD4 $ show n
   runBC' c e (I n:s)
@@ -220,5 +242,5 @@ runBC' (IFZ:l:c) e (I _:s) =
 runBC' (JUMP:l:c) e s =
   let c' = drop l c
   in runBC' c' e s
-runBC' bc e s = printFD4 (showBC bc) >> failFD4 "Hasta acá llegué."
--- -- IFZ c1 THEN c2 ELSE c3; c4
+runBC' bcode e s = 
+  printFD4 (showBC bcode) >> failFD4 "Hasta acá llegué."

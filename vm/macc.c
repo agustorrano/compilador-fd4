@@ -36,6 +36,8 @@ enum {
 	PRINT    = 13,
 	PRINTN   = 14,
 	JUMP     = 15,
+	IFZ      = 16,
+	TAILCALL = 17,
 };
 
 #define quit(...)							\
@@ -116,6 +118,13 @@ static int env_len(env e)
 	return rc;
 }
 
+static value env_search(env e, int i)
+{
+	for (int j = 0; j < i; j++)
+		e = e->next;
+	return e->v;
+}
+
 void run(code init_c)
 {
 	/*
@@ -192,8 +201,9 @@ void run(code init_c)
 		/* Consumimos un opcode y lo inspeccionamos. */
 		switch(*c++) {
 		case ACCESS: {
-			/* implementame */
-			abort();
+			value v = env_search(e, *c++);
+			(*s++) = v;
+			break;
 		}
 
 		case CONST: {
@@ -318,13 +328,14 @@ void run(code init_c)
 		}
 
 		case SHIFT: {
-			/* implementame */
-			abort();
+			value v = (*--s);
+			e = env_push(e, v);
+			break;
 		}
 
 		case DROP: {
-			/* implementame */
-			abort();
+			e = e->next;
+			break;
 		}
 
 		case PRINTN: {
@@ -337,6 +348,30 @@ void run(code init_c)
 			wchar_t wc;
 			while ((wc = *c++))
 				putwchar(wc);
+
+			break;
+		}
+
+		case JUMP: {
+			int n = *c++;
+			c += n;
+			break;
+		}
+
+		case IFZ: {
+			int n = *c++;
+			if ((*--s).i)
+				c += n;
+			break;
+		}
+
+		case TAILCALL: {
+			value arg = *--s;
+
+			struct clo clo_g = (*--s).clo;
+
+			e = env_push(clo_g.clo_env, arg);
+			c = clo_g.clo_body;
 
 			break;
 		}
