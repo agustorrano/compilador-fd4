@@ -1,5 +1,5 @@
 {-# LANGUAGE PatternSynonyms #-}
-{-# LANGUAGE RecordWildCards #-}
+-- {-# LANGUAGE RecordWildCards #-}
 {-# OPTIONS_GHC -Wno-incomplete-patterns #-}
 {-|
 Module      : Bytecompile
@@ -81,6 +81,7 @@ pattern PRINTN   = 14
 pattern JUMP     = 15
 pattern IFZ      = 16
 pattern TAILCALL = 17
+pattern POP = 18
 
 --función util para debugging: muestra el Bytecode de forma más legible.
 showOps :: Bytecode -> [String]
@@ -104,10 +105,38 @@ showOps (PRINT:xs)       = let (msg,_:rest) = span (/=NULL) xs
 showOps (PRINTN:xs)      = "PRINTN" : showOps xs
 showOps (ADD:xs)         = "ADD" : showOps xs
 showOps (TAILCALL:xs)    = "TAILCALL" : showOps xs
+showOps (POP:xs)         = "POP" : showOps xs
 showOps (x:xs)           = show x : showOps xs
 
 showBC :: Bytecode -> String
 showBC = intercalate "; " . showOps
+
+-- indexShift :: Tm info Var -> Tm info Var
+-- indexShift = varChanger (\_ p n -> V p (Free n)) bnd
+--   where bnd _ p i | i = V p $ Bound (i - 1) 
+indexShift :: TTerm -> Int -> TTerm
+indexShift tt@(V i (Bound n)) m = if n < m then tt else V i (Bound (n - 1))
+indexShift (Lam i n ty (Sc1 t)) m = Lam i n ty (Sc1 $ indexShift t (m + 1))
+indexShift (App i t t') m = App i (indexShift t m) (indexShift t' m)
+indexShift (Print i str t) m = Print i str (indexShift t m)
+indexShift (BinaryOp i op t t') m = BinaryOp i op (indexShift t m) (indexShift t' m)
+indexShift (Fix i f fty x ty (Sc2 t)) m = Fix i f fty x ty (Sc2 $ indexShift t (m + 2))
+indexShift (IfZ i t1 t2 t3) m = IfZ i (indexShift t1 m) (indexShift t2 m) (indexShift t3 m)
+indexShift (Let i x ty t (Sc1 t')) m = Let i x ty (indexShift t m) (Sc1 $ indexShift t' (m + 1))
+indexShift tt _ = tt
+
+localScope :: TTerm -> Int -> Bool
+localScope (V _ (Bound n)) m = m == n
+localScope (V _ (Free name)) m = False
+localScope (V _ (Global name)) m = False
+localScope (Const _ _) m = False
+localScope (Lam _ _ _ (Sc1 t)) m = localScope t (m + 1)
+localScope (App _ t t') m = localScope t m || localScope t' m
+localScope (Print _ _ t) m = localScope t m
+localScope (BinaryOp _ _ t t') m = localScope t m || localScope t' m
+localScope (Fix _ _ _ _ _ (Sc2 t)) m = localScope t (m + 2)
+localScope (IfZ _ t1 t2 t3) m = localScope t1 m || localScope t2 m || localScope t3 m
+localScope (Let _ _ _ t (Sc1 t')) m = localScope t m || localScope t' (m + 1)
 
 bc :: MonadFD4 m => TTerm -> m Bytecode
 bc tt = bcc tt []
@@ -143,15 +172,33 @@ bcc (IfZ i t1 t2 t3) b = do
   b''' <- bc t3
   let (l1,l2) = (length b'',length b''')
   bcc t1 $ (IFZ:l1+2:b'') ++ (JUMP:l2:b''') ++ b
-bcc (Let i x ty t (Sc1 t')) b@[STOP] = do
-  be <- bcc t' b
-  bcc t (SHIFT:be)
+bcc (Let i x ty t (Sc1 t')) b@[STOP] =
+  if localScope t' 0 
+  then do
+    be <- bcc t' b
+    bcc t (SHIFT:be)
+  else do
+    let t'' = indexShift t' 0
+    be <- bcc t'' b
+    bcc t (POP:be)
 bcc (Let i x ty t (Sc1 t')) b@(RETURN:_) = do
-  be <- bcc t' b
-  bcc t (SHIFT:be)
+  if localScope t' 0 
+  then do
+    be <- bcc t' b
+    bcc t (SHIFT:be)
+  else do
+    let t'' = indexShift t' 0
+    be <- bcc t'' b
+    bcc t (POP:be)
 bcc (Let i x ty t (Sc1 t')) b = do
-  be <- bcc t' (DROP:b)
-  bcc t (SHIFT:be)
+  if localScope t' 0 
+  then do
+    be <- bcc t' (DROP:b)
+    bcc t (SHIFT:be)
+  else do
+    let t'' = indexShift t' 0
+    be <- bcc t'' b
+    bcc t (POP:be)
 
 bct :: MonadFD4 m => TTerm -> Bytecode -> m Bytecode
 bct (App i t t') b = do
@@ -163,8 +210,14 @@ bct (IfZ i t1 t2 t3) b = do
   let l1 = length b''
   bcc t1 $ (IFZ:l1:b'') ++ b''' ++ b
 bct (Let i x ty t (Sc1 t')) b = do
-  be <- bct t' b
-  bcc t (SHIFT:be)
+  if localScope t' 0 
+  then do
+    be <- bcc t' b
+    bcc t (SHIFT:be)
+  else do
+    let t'' = indexShift t' 0
+    be <- bcc t'' b
+    bcc t (POP:be)
 bct t b = bcc t (RETURN:b)
 
 -- ord/chr devuelven los codepoints unicode, o en otras palabras
@@ -176,7 +229,12 @@ bc2string :: Bytecode -> String
 bc2string = map chr
 
 bytecompileModule :: MonadFD4 m => Module -> m Bytecode
-bytecompileModule m = bcc (moduleTTerm (reverse m)) [STOP]
+bytecompileModule m = do
+  let tt = moduleTTerm (reverse m)
+  bytec <- bcc tt [STOP]
+  printFD4 $ show tt
+  printFD4 $ showBC bytec
+  return bytec
 
 global2free :: TTerm -> TTerm
 global2free (V i (Global n)) = V i (Free n)
@@ -243,5 +301,6 @@ runBC' (IFZ:l:c) e (I _:s) =
 runBC' (JUMP:l:c) e s =
   let c' = drop l c
   in runBC' c' e s
+runBC' (POP:c) e (v:s) = runBC' c e s
 runBC' bcode e s = 
   printFD4 (showBC bcode) >> failFD4 "Hasta acá llegué."
