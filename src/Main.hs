@@ -154,6 +154,7 @@ compileFileBC f = do
     setInter i
     gt <- getModule
     bc <- bytecompileModule gt
+    printFD4 $ showBC bc
     let bcf = changeExtension f ".bc"
     when i $ printFD4 ("Creando " ++ bcf ++ "...")
     liftIO (bcWrite bc bcf)

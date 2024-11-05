@@ -103,6 +103,7 @@ showOps (PRINT:xs)       = let (msg,_:rest) = span (/=NULL) xs
                            in ("PRINT " ++ show (bc2string msg)) : showOps rest
 showOps (PRINTN:xs)      = "PRINTN" : showOps xs
 showOps (ADD:xs)         = "ADD" : showOps xs
+showOps (TAILCALL:xs)    = "TAILCALL" : showOps xs
 showOps (x:xs)           = show x : showOps xs
 
 showBC :: Bytecode -> String
@@ -134,7 +135,7 @@ bcc (BinaryOp i op t t') b = do
   where aux Add = ADD
         aux Sub = SUB
 bcc (Fix i f fty x ty (Sc2 t)) b = do
-  bco <- bc t
+  bco <- bct t []
   let l = length bco
   return $ (FUNCTION:l+1:bco) ++ (RETURN:FIX:b)
 bcc (IfZ i t1 t2 t3) b = do
