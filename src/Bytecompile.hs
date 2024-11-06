@@ -149,7 +149,7 @@ bcc (Const i (CNat n)) b = return (CONST:n:b)
 bcc (Lam i n ty (Sc1 t)) b = do
   bco <- bct t []
   let l = length bco
-  return $ (FUNCTION:l + 1:bco) ++ (RETURN:b)
+  return $ (FUNCTION:l:bco) ++ b
 bcc (App i t t') b = do
   be <- bcc t' (CALL:b)
   bcc t be 
@@ -166,7 +166,7 @@ bcc (BinaryOp i op t t') b = do
 bcc (Fix i f fty x ty (Sc2 t)) b = do
   bco <- bct t []
   let l = length bco
-  return $ (FUNCTION:l+1:bco) ++ (RETURN:FIX:b)
+  return $ (FUNCTION:l:bco) ++ (FIX:b)
 bcc (IfZ i t1 t2 t3) b = do
   b'' <- bc t2 
   b''' <- bc t3
@@ -212,11 +212,11 @@ bct (IfZ i t1 t2 t3) b = do
 bct (Let i x ty t (Sc1 t')) b = do
   if localScope t' 0 
   then do
-    be <- bcc t' b
+    be <- bct t' b
     bcc t (SHIFT:be)
   else do
     let t'' = indexShift t' 0
-    be <- bcc t'' b
+    be <- bct t'' b
     bcc t (POP:be)
 bct t b = bcc t (RETURN:b)
 
