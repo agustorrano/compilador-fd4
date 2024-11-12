@@ -1,13 +1,23 @@
 module ClosureConvert where
 
 import Lang
-import Ir
+import IR
 import C
 
 import Control.Monad.State
 import Control.Monad.Writer
 
-closureConvert :: Term -> StateT Int (Writer [IrDecl]) Ir
+class (MonadState Int m, MonadWriter [IrDecl] m) => MonadCC m where
+
+
+type CC = StateT Int (Writer [IrDecl])
+
+instance MonadCC CC
+
+getFreshName :: MonadCC m => String -> m String
+
+
+closureConvert :: MonadCC m => Term -> m Ir
 closureConvert (V _ (Global n)) = undefined
 closureConvert (V _ (Free n)) = undefined
 closureConvert (V _ (Bound i)) = undefined
