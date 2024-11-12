@@ -30,6 +30,9 @@ import Global
 import Errors
 import Lang
 import CEK 
+import IR
+import C
+import ClosureConvert
 import Bytecompile
 import Parse ( P, tm, program, declOrTm, runP )
 import Elab ( elab, elabTermDecl, elabTyDecl )
