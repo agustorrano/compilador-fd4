@@ -39,6 +39,8 @@ data Mode =
   | Eval
   | Bytecompile
   | RunVM
+  | ClosConv
+
 data Conf = Conf {
     opt :: Bool,          --  ^ True, si estan habilitadas las optimizaciones.
     modo :: Mode

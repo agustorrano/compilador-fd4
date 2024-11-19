@@ -64,17 +64,16 @@ import Common (changeExtension)
 prompt :: String
 prompt = "FD4> "
 
-
-
 -- | Parser de banderas
 parseMode :: Parser (Mode,Bool)
 parseMode = (,) <$>
-      (flag' Typecheck ( long "typecheck" <> short 't' <> help "Chequear tipos e imprimir el término")
-      <|> flag Interactive Interactive ( long "interactive" <> short 'i' <> help "Ejecutar en forma interactiva")
-      <|> flag Eval        Eval        (long "eval" <> short 'e' <> help "Evaluar programa")
+      (flag' Typecheck (long "typecheck" <> short 't' <> help "Chequear tipos e imprimir el término")
+      <|> flag Interactive Interactive (long "interactive" <> short 'i' <> help "Ejecutar en forma interactiva")
+      <|> flag Eval Eval (long "eval" <> short 'e' <> help "Evaluar programa")
       <|> flag CEK CEK (long "cek" <> short 'k' <> help "Evaluar programa con máquina abstracta CEK")
       <|> flag Bytecompile Bytecompile (long "bytecompile" <> short 'm' <> help "Compilar a la Macchina")
       <|> flag RunVM RunVM (long "runVM" <> short 'r' <> help "Ejecutar bytecode en la Macchina")
+      <|> flag ClosConv ClosConv (long "closconv" <> short 'c' <> help "Compilar código a C")
       )
    <*> pure False
 
@@ -97,6 +96,8 @@ main = execParser opts >>= go
               runOrFail (Conf opt Bytecompile) $ mapM_ compileFileBC files
     go (RunVM, opt, files) =
               runOrFail (Conf opt RunVM) $ mapM_ compileFileRVM files
+    go (ClosConv, opt, files) =
+              runOrFail (Conf opt ClosConv) $ mapM_ compileC files
     go (m, opt, files) =
               runOrFail (Conf opt m) $ mapM_ compileFile files
 
@@ -172,6 +173,20 @@ compileFileRVM f = do
     setInter i
     runBC bc
 
+compileC :: MonadFD4 m => FilePath -> m ()
+compileC f = do
+  i <- getInter
+  setInter False
+  when i $ printFD4 ("Abriendo "++f++"...")
+  decls <- loadFile f
+  dts <- mapM typecheckDecl decls
+  setInter i
+  let irdecls = runCC dts
+      prog = ir2C (IrDecls irdecls)
+      cf = changeExtension f ".c"
+  when i $ printFD4 ("Creando " ++ cf ++ "...")
+  liftIO (writeFile cf prog)
+
 parseIO ::  MonadFD4 m => String -> P a -> String -> m a
 parseIO filename p x = case runP p x filename of
                   Left e  -> throwError (ParseErr e)
@@ -181,6 +196,11 @@ evalDecl :: MonadFD4 m => Decl TTerm -> m (Decl TTerm)
 evalDecl (Decl p x e) = do
     e' <- eval e
     return (Decl p x e')
+
+typecheckDecl :: MonadFD4 m => SDecl -> m (Decl TTerm)
+typecheckDecl ss = do
+    (ty,t') <- elabTermDecl ss
+    tcDecl ty t'
 
 handleDecl ::  MonadFD4 m => SDecl -> m ()
 handleDecl d@SDecl {..} = 
@@ -211,13 +231,7 @@ handleDecl d@SDecl {..} =
         dt <- typecheckDecl d
         addTermDecl dt
       RunVM -> undefined
-
-  where
-    typecheckDecl :: MonadFD4 m => SDecl -> m (Decl TTerm)
-    typecheckDecl ss =
-      do
-        (ty,t') <- elabTermDecl ss
-        tcDecl ty t'
+      ClosConv -> undefined
 handleDecl d@SDeclTy {..} =
   do
     d' <- elabTyDecl d
