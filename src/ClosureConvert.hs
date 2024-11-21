@@ -1,3 +1,4 @@
+{-# OPTIONS_GHC -Wno-incomplete-patterns #-}
 module ClosureConvert where
 
 import Lang
@@ -28,13 +29,13 @@ getFreshNameClos :: CC String
 getFreshNameClos = do
     n <- gets closInt
     modify (\s -> s { closInt = n + 1 })
-    return $ "__clos" ++ show n
+    return $ "clos" ++ show n
 
 getFreshNameFun :: CC String
 getFreshNameFun = do
     n <- gets funInt
     modify (\s -> s { funInt = n + 1 })
-    return $ "__f" ++ show n
+    return $ "f" ++ show n
 
 addVars :: (Name, IrTy) -> CC ()
 addVars (n, ty) = modify (\s -> s { vars = (n, ty) : vars s })
@@ -59,21 +60,21 @@ closureConvert (V _ (Global n)) = return $ IrGlobal n
 closureConvert (V _ (Free n)) = return $ IrVar n
 closureConvert (V _ (Bound i)) = undefined
 closureConvert (Const _ c) = return $ IrConst c
-closureConvert (Lam _ n ty s@(Sc1 t)) = do
+closureConvert (Lam (_, FunTy _ _ ty') n ty s@(Sc1 t)) = do
     f <- getFreshNameFun
     clos <- getFreshNameClos
-    ir <- closureConvert (open n s)
     addVars (n, ty2irTy ty)
+    ir <- closureConvert (open n s)
     let fv = freeVars t
     body <- var2ir fv clos 1 ir
-    let decl = IrFun f IrInt [(clos, IrClo), (n, IrInt)] body
+    let decl = IrFun f (ty2irTy ty') [(clos, IrClo), (n, ty2irTy ty)] body
     tell [decl]
     return $ MkClosure f (map IrVar fv)
-closureConvert (App _ t@Lam {} t') = do
+closureConvert (App (_, ty) t@Lam {} t') = do
     clos <- getFreshNameClos
     ir1 <- closureConvert t
     ir2 <- closureConvert t'
-    let ir3 = IrCall (IrAccess (IrVar clos) IrFunTy 0) [IrVar clos, ir2] IrInt
+    let ir3 = IrCall (IrAccess (IrVar clos) IrFunTy 0) [IrVar clos, ir2] (ty2irTy ty)
     return $ IrLet clos IrClo ir1 ir3
 closureConvert (App (_, ty) t t') = do
     ir1 <- closureConvert t
@@ -87,14 +88,14 @@ closureConvert (BinaryOp _ op t t') = do
     ir1 <- closureConvert t
     ir2 <- closureConvert t'
     return $ IrBinaryOp op ir1 ir2
-closureConvert (Fix _ f ty n ty' s@(Sc2 t)) = do
+closureConvert (Fix (_, FunTy _ _ ty'') f ty n ty' s@(Sc2 t)) = do
     clos <- getFreshNameClos
-    ir <- closureConvert (open2 f n s)
     addVars (n, ty2irTy ty')
     addVars (f, ty2irTy ty)
+    ir <- closureConvert (open2 f n s)
     let fv = freeVars t
     body <- var2ir fv clos 1 ir
-    let decl = IrFun f IrInt [(clos, IrClo), (n, IrInt)] body
+    let decl = IrFun f (ty2irTy ty'') [(clos, IrClo), (n, ty2irTy ty')] body
     tell [decl]
     return $ MkClosure f (map IrVar fv)
 closureConvert (IfZ _ t t' t'') = do
@@ -103,9 +104,9 @@ closureConvert (IfZ _ t t' t'') = do
     ir3 <- closureConvert t''
     return $ IrIfZ ir1 ir2 ir3
 closureConvert (Let _ n ty t s) = do
+    addVars (n, ty2irTy ty)
     ir1 <- closureConvert t
     ir2 <- closureConvert (open n s)
-    addVars (n, ty2irTy ty)
     return $ IrLet n (ty2irTy ty) ir1 ir2
 
 term2irval :: Decl TTerm -> CC ()

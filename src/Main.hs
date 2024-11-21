@@ -73,7 +73,7 @@ parseMode = (,) <$>
       <|> flag CEK CEK (long "cek" <> short 'k' <> help "Evaluar programa con máquina abstracta CEK")
       <|> flag Bytecompile Bytecompile (long "bytecompile" <> short 'm' <> help "Compilar a la Macchina")
       <|> flag RunVM RunVM (long "runVM" <> short 'r' <> help "Ejecutar bytecode en la Macchina")
-      <|> flag ClosConv ClosConv (long "closconv" <> short 'c' <> help "Compilar código a C")
+      <|> flag ClosConv ClosConv (long "cc" <> short 'c' <> help "Compilar código a C")
       )
    <*> pure False
 
@@ -179,7 +179,7 @@ compileC f = do
   setInter False
   when i $ printFD4 ("Abriendo "++f++"...")
   decls <- loadFile f
-  dts <- mapM typecheckDecl decls
+  dts <- mapM (\ d -> do {td <- typecheckDecl d; addTermDecl td; return td}) decls
   setInter i
   let irdecls = runCC dts
       prog = ir2C (IrDecls irdecls)

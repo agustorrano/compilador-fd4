@@ -20,11 +20,11 @@ EXTRAFLAGS	:=
 # comentando una de estas líneas.
 # CHECK	+= $(patsubst %,%.check_eval,$(TESTS))
 # CHECK	+= $(patsubst %,%.check_cek,$(TESTS))
- CHECK	+= $(patsubst %,%.check_bc_h,$(TESTS))
+# CHECK	+= $(patsubst %,%.check_bc_h,$(TESTS))
 # CHECK	+= $(patsubst %,%.check_bc,$(TESTS))
 # CHECK	+= $(patsubst %,%.check_eval_opt,$(TESTS))
 # CHECK	+= $(patsubst %,%.check_opt,$(TESTS))
-# CHECK	+= $(patsubst %,%.check_cc,$(TESTS))
+ CHECK	+= $(patsubst %,%.check_cc,$(TESTS))
 
 # Ejemplo: así se puede apagar un test en particular.
 CHECK	:= $(filter-out tests/ok/00-basicos/401-inf.%,$(CHECK))
