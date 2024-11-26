@@ -179,9 +179,10 @@ compileC f = do
   setInter False
   when i $ printFD4 ("Abriendo "++f++"...")
   decls <- loadFile f
-  dts <- mapM (\ d -> do {td <- typecheckDecl d; addTermDecl td; return td}) decls
+  mapM_ handleDecl decls
   setInter i
-  let irdecls = runCC dts
+  dtt <- getModule
+  let irdecls = runCC (reverse dtt)
       prog = ir2C (IrDecls irdecls)
       cf = changeExtension f ".c"
   when i $ printFD4 ("Creando " ++ cf ++ "...")
@@ -231,7 +232,9 @@ handleDecl d@SDecl {..} =
         dt <- typecheckDecl d
         addTermDecl dt
       RunVM -> undefined
-      ClosConv -> undefined
+      ClosConv -> do
+        td <- typecheckDecl d
+        addTermDecl td
 handleDecl d@SDeclTy {..} =
   do
     d' <- elabTyDecl d

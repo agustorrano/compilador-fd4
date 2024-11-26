@@ -56,6 +56,9 @@ instance Eq Ty where
   FunTy _ t1 t2 == FunTy _ t1' t2' = 
     t1 == t1' && t2 == t2'
 
+instance Ord Ty where
+  ty <= ty' = True
+
 type Name = String
 
 type STerm = STm Pos STy Name -- ^ 'STm' tiene 'Name's como variables ligadas y libres y globales, guarda posición  
@@ -175,6 +178,20 @@ freeVars tm = nubSort $ go tm [] where
   go (App   _ l r             ) xs = go l $ go r xs
   go (Print _ _ t             ) xs = go t xs
   go (BinaryOp _ _ t u        ) xs = go t $ go u xs
+  go (Fix _ _ _ _ _ (Sc2 t)   ) xs = go t xs
+  go (IfZ _ c t e             ) xs = go c $ go t $ go e xs
+  go (Const _ _               ) xs = xs
+  go (Let _ _ _ e (Sc1 t)     ) xs = go e (go t xs)
+
+freeVarsTy :: TTerm -> [(Name, Ty)]
+freeVarsTy tm = nubSort $ go tm [] where
+  go (V (_,ty) (Free   v)          ) xs = (v, ty) : xs
+  go (V (_,ty) (Global v)          ) xs = (v, ty) : xs
+  go (V _ _                   ) xs = xs
+  go (Lam _ _ _ (Sc1 t)       ) xs = go t xs
+  go (App _ l r             ) xs = go l $ go r xs
+  go (Print _ _ t             ) xs = go t xs
+  go (BinaryOp i _ t u        ) xs = go t $ go u xs
   go (Fix _ _ _ _ _ (Sc2 t)   ) xs = go t xs
   go (IfZ _ c t e             ) xs = go c $ go t $ go e xs
   go (Const _ _               ) xs = xs

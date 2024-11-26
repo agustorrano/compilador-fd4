@@ -7,19 +7,18 @@ import Subst
 
 import Control.Monad.State
 import Control.Monad.Writer
-import Data.Maybe ( fromJust )
 
 
 data IrEnv = IrEnv {
     closInt :: Int,
     funInt :: Int,
-    vars :: [(Name, IrTy)]
+    varInt :: Int
 }
 
 type CC = StateT IrEnv (Writer [IrDecl])
 
 initialIrEnv :: IrEnv
-initialIrEnv = IrEnv 0 0 []
+initialIrEnv = IrEnv 0 0 0
 
 ty2irTy :: Ty -> IrTy
 ty2irTy (NatTy _) = IrInt
@@ -35,25 +34,21 @@ getFreshNameFun :: CC String
 getFreshNameFun = do
     n <- gets funInt
     modify (\s -> s { funInt = n + 1 })
-    return $ "f" ++ show n
+    return $ "g" ++ show n
 
-addVars :: (Name, IrTy) -> CC ()
-addVars (n, ty) = modify (\s -> s { vars = (n, ty) : vars s })
+getFreshNameVar :: CC String
+getFreshNameVar = do
+    n <- gets varInt
+    modify (\s -> s { varInt = n + 1 })
+    return $ "x" ++ show n
 
-resetVars :: CC ()
-resetVars = modify (\s -> s { vars = [] })
-
-lookupTy :: Name -> CC IrTy
-lookupTy nm = do
-    gets (fromJust . lookup nm . vars)
-
-var2ir :: [Name] -> Name -> Int -> Ir -> CC Ir
+var2ir :: [(Name,Ty)] -> Name -> Int -> Ir -> CC Ir
 var2ir [] _ _ ir = return ir
-var2ir (n:ns) clos i ir = do
-    ty <- lookupTy n
-    let ir' = IrAccess (IrVar clos) ty i
+var2ir ((n,ty):ns) clos i ir = do
+    let irty = ty2irTy ty
+        ir' = IrAccess (IrVar clos) irty i
     ir'' <- var2ir ns clos (i + 1) ir
-    return $ IrLet n ty ir' ir''
+    return $ IrLet n irty ir' ir''
 
 closureConvert :: TTerm -> CC Ir
 closureConvert (V _ (Global n)) = return $ IrGlobal n
@@ -61,58 +56,53 @@ closureConvert (V _ (Free n)) = return $ IrVar n
 closureConvert (V _ (Bound i)) = undefined
 closureConvert (Const _ c) = return $ IrConst c
 closureConvert (Lam (_, FunTy _ _ ty') n ty s@(Sc1 t)) = do
+    x <- getFreshNameVar
     f <- getFreshNameFun
     clos <- getFreshNameClos
-    addVars (n, ty2irTy ty)
-    ir <- closureConvert (open n s)
-    let fv = freeVars t
+    ir <- closureConvert (open x s)
+    let fv = freeVarsTy t
     body <- var2ir fv clos 1 ir
-    let decl = IrFun f (ty2irTy ty') [(clos, IrClo), (n, ty2irTy ty)] body
+    let decl = IrFun f (ty2irTy ty') [(clos, IrClo), (x, ty2irTy ty)] body
     tell [decl]
-    return $ MkClosure f (map IrVar fv)
-closureConvert (App (_, ty) t@Lam {} t') = do
+    return $ MkClosure f (map (IrVar . fst) fv)
+closureConvert (App (_, ty) t t') = do
     clos <- getFreshNameClos
     ir1 <- closureConvert t
     ir2 <- closureConvert t'
     let ir3 = IrCall (IrAccess (IrVar clos) IrFunTy 0) [IrVar clos, ir2] (ty2irTy ty)
     return $ IrLet clos IrClo ir1 ir3
-closureConvert (App (_, ty) t t') = do
-    ir1 <- closureConvert t
-    ir2 <- closureConvert t'
-    let ir3 = IrCall (IrAccess ir1 IrFunTy 0) [ir1, ir2] (ty2irTy ty)
-    return ir3
-closureConvert (Print _ str t) = do
+closureConvert w@(Print _ str t) = do
+    x <- getFreshNameVar
     ir <- closureConvert t
-    return $ IrPrint str ir
+    return $ IrLet x IrInt ir (IrPrint str (IrVar x))
 closureConvert (BinaryOp _ op t t') = do
     ir1 <- closureConvert t
     ir2 <- closureConvert t'
     return $ IrBinaryOp op ir1 ir2
-closureConvert (Fix (_, FunTy _ _ ty'') f ty n ty' s@(Sc2 t)) = do
+closureConvert(Fix (_, FunTy _ _ ty'') f ty n ty' s@(Sc2 t)) = do
+    x <- getFreshNameVar
+    f' <- getFreshNameFun
     clos <- getFreshNameClos
-    addVars (n, ty2irTy ty')
-    addVars (f, ty2irTy ty)
-    ir <- closureConvert (open2 f n s)
-    let fv = freeVars t
+    ir <- closureConvert (open2 clos x s)
+    let fv = freeVarsTy t
     body <- var2ir fv clos 1 ir
-    let decl = IrFun f (ty2irTy ty'') [(clos, IrClo), (n, ty2irTy ty')] body
+    let decl = IrFun f' (ty2irTy ty'') [(clos, IrClo), (x, ty2irTy ty')] body
     tell [decl]
-    return $ MkClosure f (map IrVar fv)
+    return $ MkClosure f' (map (IrVar . fst) fv)
 closureConvert (IfZ _ t t' t'') = do
     ir1 <- closureConvert t
     ir2 <- closureConvert t'
     ir3 <- closureConvert t''
     return $ IrIfZ ir1 ir2 ir3
 closureConvert (Let _ n ty t s) = do
-    addVars (n, ty2irTy ty)
+    x <- getFreshNameVar
     ir1 <- closureConvert t
-    ir2 <- closureConvert (open n s)
-    return $ IrLet n (ty2irTy ty) ir1 ir2
+    ir2 <- closureConvert (open x s)
+    return $ IrLet x (ty2irTy ty) ir1 ir2
 
 term2irval :: Decl TTerm -> CC ()
 term2irval (Decl _ n b) = do
     ir <- closureConvert b
-    resetVars
     let decl = IrVal n (ty2irTy (getTy b)) ir
     tell [decl]
 
